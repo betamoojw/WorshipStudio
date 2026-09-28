@@ -368,6 +368,11 @@ export interface LivePresentationTheme {
 export interface LiveSlideContent {
   itemLabel: string
   subLabel: string
+  /** The operator's name for this slide (utils/slideLabel.ts's operatorSlideLabel) — never shown
+   *  to the audience. Carried here for the phone remote, which finds the live entry in its slide
+   *  list by matching it, and can't rebuild it from itemLabel/subLabel: a scripture page's is its
+   *  own verses ("Romans 8:31–35"), which the audience fields don't hold. */
+  slideLabel?: string
   text: string
   /** Resolved reusable style for generated song/scripture/sermon/text slides. */
   presentationTheme?: LivePresentationTheme

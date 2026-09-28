@@ -37,6 +37,8 @@ defineEmits<{
 const previousEyebrow = computed(() => (props.previous.newItem ? 'Previous item' : 'Previous'))
 const nextEyebrow = computed(() => (props.next.newItem ? 'Next item' : 'Next'))
 const blankLabel = computed(() => (props.isBlankScreen ? 'Restore Screen' : 'Blank Screen'))
+const fullLabel = (destination: TransportDestination) =>
+  destination.prefix ? `${destination.prefix} ${destination.label}` : destination.label
 </script>
 
 <template>
@@ -54,13 +56,16 @@ const blankLabel = computed(() => (props.isBlankScreen ? 'Restore Screen' : 'Bla
         type="button"
         class="transport-destination transport-destination--previous"
         :disabled="previousDisabled"
-        :aria-label="`${previousEyebrow}: ${previous.label}`"
+        :aria-label="`${previousEyebrow}: ${fullLabel(previous)}`"
         @click="$emit('previous')"
       >
         <v-icon icon="mdi-chevron-left" size="24" class="destination-chevron" />
         <span class="destination-copy">
           <small>{{ previousEyebrow }}</small>
-          <span class="destination-label">{{ previous.label }}</span>
+          <span class="destination-label"
+            ><span v-if="previous.prefix" class="destination-prefix">{{ previous.prefix }}</span
+            >{{ previous.label }}</span
+          >
         </span>
         <kbd>←</kbd>
       </button>
@@ -113,13 +118,16 @@ const blankLabel = computed(() => (props.isBlankScreen ? 'Restore Screen' : 'Bla
         type="button"
         class="transport-destination transport-destination--next"
         :disabled="nextDisabled"
-        :aria-label="`${nextEyebrow}: ${next.label}`"
+        :aria-label="`${nextEyebrow}: ${fullLabel(next)}`"
         @click="$emit('next')"
       >
         <kbd>→</kbd>
         <span class="destination-copy">
           <small>{{ nextEyebrow }}</small>
-          <span class="destination-label">{{ next.label }}</span>
+          <span class="destination-label"
+            ><span v-if="next.prefix" class="destination-prefix">{{ next.prefix }}</span
+            >{{ next.label }}</span
+          >
         </span>
         <v-icon icon="mdi-chevron-right" size="26" class="destination-chevron" />
       </button>
@@ -230,6 +238,11 @@ const blankLabel = computed(() => (props.isBlankScreen ? 'Restore Screen' : 'Bla
 }
 .transport-destination--next .destination-copy small {
   color: rgba(var(--v-theme-on-surface), 0.72);
+}
+/* The gap after a scripture page's book ("Romans 8:31–35"). A margin rather than a space in the
+   markup, which the template compiler strips from the end of the element. */
+.destination-prefix {
+  margin-right: 0.3em;
 }
 /* Two lines before anything is cut off — the label is already as short as it can be (just the
    part within the live item), so what's left is a long item name. */
@@ -351,7 +364,8 @@ const blankLabel = computed(() => (props.isBlankScreen ? 'Restore Screen' : 'Bla
     gap: 10px;
   }
   .transport-destination > kbd,
-  .screen-override-label {
+  .screen-override-label,
+  .destination-prefix {
     display: none;
   }
   .screen-override-button {

@@ -6,7 +6,7 @@ import { cssFontFamily, resolvePresentationFontFamily } from '@/utils/presentati
 import { presentationTextEffect } from '@/utils/presentationTextEffect'
 import { resolvePresentationTheme } from '@/utils/presentationTheme'
 import { logger } from '@/utils/logger'
-import { slideLabel } from '@/utils/slideLabel'
+import { operatorSlideLabel, pageReference } from '@/utils/slideLabel'
 import type { FlatSlide } from '@/utils/flattenService'
 import type { Service } from '@/models/service'
 import type { MediaItem, SlideLibraryItem } from '@/models/library'
@@ -24,6 +24,9 @@ import type {
 /** What Previous or Next will move to, as the transport bar names it (see describeDestination). */
 export interface TransportDestination {
   label: string
+  /** Shown before `label` only where the bar has room (its wide tier) — a scripture page's book,
+   *  so "Romans 8:31–35" there and "8:31–35" below it. */
+  prefix?: string
   /** Moving there leaves the live item for another one. */
   newItem: boolean
 }
@@ -117,7 +120,7 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
 
   function describeSlide(index: number): string {
     const slide = flatSlides.value[index]
-    if (slide) return slideLabel(slide.itemLabel, slide.subLabel)
+    if (slide) return operatorSlideLabel(slide)
     return flatSlides.value.length === 0 ? 'Service is empty' : 'End of service'
   }
   const nextIndex = computed(() =>
@@ -137,9 +140,17 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
   function describeDestination(index: number, disabled: boolean, edge: string) {
     const target = disabled ? undefined : flatSlides.value[index]
     if (!target) return { label: edge, newItem: false }
-    if (target.itemIndex === liveSlide.value?.itemIndex)
-      return { label: target.subLabel || target.itemLabel, newItem: false }
-    return { label: target.itemLabel, newItem: true }
+    const live = liveSlide.value
+    if (target.itemIndex !== live?.itemIndex) return { label: target.itemLabel, newItem: true }
+    // A scripture page: its own chapter and verses, the book only where there's room — unless
+    // it's a different passage within the same sermon, where "3:16" alone wouldn't say which.
+    const reference = pageReference(target)
+    if (reference) {
+      return target.itemLabel === live.itemLabel
+        ? { label: target.verseRange!, prefix: target.verseBook, newItem: false }
+        : { label: reference, newItem: false }
+    }
+    return { label: target.subLabel || target.itemLabel, newItem: false }
   }
   const nextDestination = computed<TransportDestination>(() =>
     describeDestination(nextIndex.value, nextDisabled.value, 'End of service'),
@@ -400,6 +411,7 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     return {
       itemLabel: slide.itemLabel,
       subLabel: slide.subLabel,
+      slideLabel: operatorSlideLabel(slide),
       text: slide.text,
       verseSegments: slide.verseSegments,
       presentationTheme: buildPresentationTheme(slide),
@@ -712,7 +724,7 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
   const currentSlideLabel = computed(() => {
     if (isBlankScreen.value) return 'Blank Screen'
     if (!liveSlide.value) return 'No Slide Selected'
-    return slideLabel(liveSlide.value.itemLabel, liveSlide.value.subLabel)
+    return operatorSlideLabel(liveSlide.value)
   })
   const liveContextSnippet = computed(() => {
     const firstLine = liveSlide.value?.text.split('\n')[0]

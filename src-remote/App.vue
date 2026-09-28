@@ -51,7 +51,8 @@ async function submitPairInput() {
   try {
     const res = await fetch(`/pair?token=${encodeURIComponent(token)}`)
     if (!res.ok) {
-      pairError.value = 'That pairing link has expired or was revoked. Ask the operator for a new one.'
+      pairError.value =
+        'That pairing link has expired or was revoked. Ask the operator for a new one.'
       return
     }
     pairInput.value = ''
@@ -63,13 +64,14 @@ async function submitPairInput() {
   }
 }
 
-// Same slideLabel() describeSlide() in useLiveTransport.ts builds each slide's own label with —
-// lets SlidePicker highlight the live entry by a plain string match (see its own doc comment).
-const currentLabel = computed(() =>
-  state.value?.content
-    ? slideLabel(state.value.content.itemLabel, state.value.content.subLabel)
-    : undefined,
-)
+// The same operator label describeSlide() in useLiveTransport.ts builds each slide's list entry
+// with — lets SlidePicker highlight the live entry by a plain string match (see its own doc
+// comment). Rebuilt from the audience fields only for content from before slideLabel existed.
+const currentLabel = computed(() => {
+  const content = state.value?.content
+  if (!content) return undefined
+  return content.slideLabel ?? slideLabel(content.itemLabel, content.subLabel)
+})
 
 // View Only has no control chrome at all (feature-spec.md section 4) — nothing to move into
 // reclaimed space, so it keeps the simpler full-bleed mirror with its own internal letterbox
@@ -159,10 +161,9 @@ const spacious = computed(() => showControlsPanel.value && !isSideBySide.value)
   <div v-if="unpaired" class="unpaired-message">
     <p class="unpaired-title">This device is no longer paired.</p>
     <p class="unpaired-hint">
-      Ask the operator for a new pairing link from your Person record (People), or paste one
-      below — this also fixes an iOS-only issue where pairing while scanning in Safari doesn't
-      carry over once the app is added to the Home Screen, since that's a separate copy with its
-      own storage.
+      Ask the operator for a new pairing link from your Person record (People), or paste one below —
+      this also fixes an iOS-only issue where pairing while scanning in Safari doesn't carry over
+      once the app is added to the Home Screen, since that's a separate copy with its own storage.
     </p>
     <textarea
       v-model="pairInput"

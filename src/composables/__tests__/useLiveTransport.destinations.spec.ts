@@ -74,6 +74,72 @@ function mountTransport() {
   return api!
 }
 
+// One sermon item holding two passages: Romans 8:28–35 over two pages, then John 3:16.
+const sermonSlides = [
+  {
+    key: 'p:0',
+    itemIndex: 0,
+    itemId: 'sermon',
+    itemLabel: 'Romans 8:28-35',
+    subLabel: 'ESV',
+    verseRange: '8:28–30',
+    passagePart: '28–30',
+    verseBook: 'Romans',
+    text: '',
+  },
+  {
+    key: 'p:1',
+    itemIndex: 0,
+    itemId: 'sermon',
+    itemLabel: 'Romans 8:28-35',
+    subLabel: 'ESV',
+    verseRange: '8:31–35',
+    passagePart: '31–35',
+    verseBook: 'Romans',
+    text: '',
+  },
+  {
+    key: 'p:2',
+    itemIndex: 0,
+    itemId: 'sermon',
+    itemLabel: 'John 3:16',
+    subLabel: 'ESV',
+    verseRange: '3:16',
+    verseBook: 'John',
+    text: '',
+  },
+]
+
+function mountScripture() {
+  let api: ReturnType<typeof useLiveTransport> | undefined
+  mount(
+    defineComponent({
+      setup() {
+        api = useLiveTransport({
+          service: ref({ id: 's', items: [{}] }),
+          selectedItemIndex: ref(0),
+          flatSlides: computed(() => sermonSlides),
+          mediaById: computed(() => new Map()),
+          mediaUrlById: new Map(),
+          slidesById: computed(() => new Map()),
+          themesStore: useThemesStore(),
+          settingsStore: useSettingsStore(),
+          isPresenting: ref(false),
+          readiness: computed(() => ({ blockers: [], warnings: [] })),
+          readinessDialogOpen: ref(false),
+          externalAppProfilesById: computed(() => new Map()),
+          tryForwardKeydown: () => false,
+          retryExternalApp: async () => {},
+          closeExternalApp: async () => {},
+          sendManualCommand: async () => {},
+        } as unknown as Parameters<typeof useLiveTransport>[0])
+        return () => h('div')
+      },
+    }),
+  )
+  return api!
+}
+
 describe('useLiveTransport destinations', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -114,6 +180,24 @@ describe('useLiveTransport destinations', () => {
     expect(api.previousDestination.value).toEqual({ label: 'Beginning of service', newItem: false })
     api.goLive(3)
     expect(api.nextDestination.value).toEqual({ label: 'End of service', newItem: false })
+  })
+
+  it('names a scripture page by its chapter and verses, with the book for where there is room', () => {
+    const api = mountScripture()
+    api.goLive(0)
+    expect(api.nextDestination.value).toEqual({
+      label: '8:31–35',
+      prefix: 'Romans',
+      newItem: false,
+    })
+    // The live label keeps the whole passage, with this page's verses after it.
+    expect(api.currentSlideLabel.value).toBe('Romans 8:28-35 (28–30)')
+  })
+
+  it('keeps the book when moving to a different passage within the same sermon', () => {
+    const api = mountScripture()
+    api.goLive(1)
+    expect(api.nextDestination.value).toEqual({ label: 'John 3:16', newItem: false })
   })
 
   it('labels a slide with no part of its own without a dangling dash', () => {

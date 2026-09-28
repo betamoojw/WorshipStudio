@@ -25,12 +25,17 @@ The toggle sits with the item's other settings in the workspace.
 
 The verses appear on screen, with verse numbers as small chips so they stay readable at any size.
 
-![A full-text scripture slide — Romans 8:28-39 in the KJV, with verse number chips and a page indicator in the footer](/screenshots/scripture-full.webp)
+![A full-text scripture slide — Romans 8:28-39 in the KJV, with verse number chips and the translation in the footer](/screenshots/scripture-full.webp)
 
 **Long passages split themselves across slides.** The split always lands on a verse boundary,
 never mid-verse, and the resulting pages are what Previous/Next steps through. You don't
-paginate anything by hand, and the footer shows which page you're on — `KJV (1/7)` above, those
-twelve verses having become seven slides.
+paginate anything by hand.
+
+The congregation sees the whole passage in the header and the translation in the footer on every
+page. Which verses each page holds is shown to you instead: the transport bar gives the passage
+with the live page's verses after it (`Romans 8:28-39 (31–35)`), Next says which verses come up
+(`8:36–39`, with the book too where the bar is wide enough), and each page's row in the workspace
+is labelled with its verses.
 
 How much lands on each slide follows from the minimum font size in
 [Settings → Text Sizing](/settings): a smaller minimum fits more verses per slide, a larger one

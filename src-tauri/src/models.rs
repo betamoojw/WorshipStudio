@@ -1239,6 +1239,10 @@ pub struct FontRange {
 pub struct LiveSlideContent {
     pub item_label: String,
     pub sub_label: String,
+    /// The operator's name for the slide (see LiveSlideContent.slideLabel in
+    /// src/adapters/types.ts) — the phone's slide list matches the live entry by it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slide_label: Option<String>,
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub presentation_theme: Option<LivePresentationTheme>,
@@ -1288,6 +1292,7 @@ mod tests {
         let content = LiveSlideContent {
             item_label: "Amazing Grace".to_string(),
             sub_label: "Chorus".to_string(),
+            slide_label: Some("Amazing Grace — Chorus".to_string()),
             text: "Amazing grace, how sweet the sound".to_string(),
             font_range: Some(FontRange {
                 min_px: 28.0,
@@ -1318,6 +1323,10 @@ mod tests {
         assert_eq!(round_tripped.wayfinding_min_font_size_px, Some(56.0));
         assert_eq!(round_tripped.wayfinding_max_font_size_px, Some(150.0));
         assert_eq!(round_tripped.bible_progress, Some(0.42));
+        assert_eq!(
+            round_tripped.slide_label.as_deref(),
+            Some("Amazing Grace — Chorus")
+        );
     }
 
     /// A library-settings.json written before scriptureMin/MaxFontSizePx existed must still

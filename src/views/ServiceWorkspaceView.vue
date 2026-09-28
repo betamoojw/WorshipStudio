@@ -42,6 +42,7 @@ import { colorForBlockLabel, colorForItemType } from '@/utils/contentColors'
 import { findSermonItem, sermonMainReference, sermonPreacherId } from '@/utils/sermonInfo'
 import { formatServiceTime } from '@/utils/serviceTime'
 import { formatVideoTime } from '@/utils/videoTime'
+import { slidePartLabel } from '@/utils/slideLabel'
 import { returnPath, routeWithReturnTo } from '@/utils/returnNavigation'
 import { errorMessage as asyncErrorMessage } from '@/composables/useAsyncStoreState'
 import { useDocumentHistory } from '@/composables/useDocumentHistory'
@@ -1942,7 +1943,7 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                       v-if="selectedItemFlatSlides.length > 1"
                       class="text-caption text-medium-emphasis"
                     >
-                      {{ slide.subLabel }}
+                      {{ slidePartLabel(slide) }}
                     </span>
                     <span
                       v-if="flatIndex === slideFlatIndex(selectedItem.id, index)"
@@ -2291,7 +2292,7 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                         <span
                           v-if="passageFlatSlides(mainSermonPassage.id).length > 1"
                           class="text-caption text-medium-emphasis"
-                          >{{ slide.subLabel }}</span
+                          >{{ slidePartLabel(slide) }}</span
                         ><span
                           v-if="flatIndex === flatIndexForKey(slide.key)"
                           class="slide-row-live-badge"
@@ -2512,7 +2513,9 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                     >
                       <div>
                         <div class="slide-row-title-row">
-                          <span class="text-caption text-medium-emphasis">{{ slide.subLabel }}</span
+                          <span class="text-caption text-medium-emphasis">{{
+                            slidePartLabel(slide)
+                          }}</span
                           ><span
                             v-if="flatIndex === flatIndexForKey(slide.key)"
                             class="slide-row-live-badge"
@@ -2746,7 +2749,7 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                           v-if="passageFlatSlides(mainSermonPassage.id).length > 1"
                           class="text-caption text-medium-emphasis"
                         >
-                          {{ slide.subLabel }}
+                          {{ slidePartLabel(slide) }}
                         </span>
                         <span
                           v-if="flatIndex === flatIndexForKey(slide.key)"
@@ -2975,7 +2978,7 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                                 v-if="passageFlatSlides(passage.id).length > 1"
                                 class="text-caption text-medium-emphasis"
                               >
-                                {{ slide.subLabel }}
+                                {{ slidePartLabel(slide) }}
                               </span>
                               <span
                                 v-if="flatIndex === flatIndexForKey(slide.key)"

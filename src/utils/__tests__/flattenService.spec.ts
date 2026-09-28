@@ -539,10 +539,20 @@ describe('flattenService — scripture', () => {
       { minPx: 28, maxPx: 72 },
     )
     expect(flat.length).toBeGreaterThan(1)
-    // Every slide's key is distinct, sub-labels show progress, and every verse number appears
-    // exactly once across the whole run (no verse dropped, none duplicated, none split).
+    // Every slide's key is distinct, and every verse number appears exactly once across the whole
+    // run (no verse dropped, none duplicated, none split).
     expect(new Set(flat.map((s) => s.key)).size).toBe(flat.length)
-    expect(flat.every((s) => /\(\d+\/\d+\)$/.test(s.subLabel))).toBe(true)
+    // The audience footer is the translation alone — no "(2/3)" page count; the operator gets
+    // each page's own verses instead, contiguous from the first verse to the last.
+    expect(flat.every((s) => s.subLabel === 'KJV')).toBe(true)
+    // Within one chapter, each page's part of the passage is just its verse numbers.
+    expect(flat.every((s) => /^\d+(–\d+)?$/.test(s.passagePart ?? ''))).toBe(true)
+    expect(flat[0]!.verseRange).toMatch(/^3:1–\d+$/)
+    expect(flat.at(-1)!.verseRange).toMatch(/^3:\d+–30$/)
+    for (let i = 1; i < flat.length; i++) {
+      const previousEnd = Number(flat[i - 1]!.verseRange!.split('–')[1])
+      expect(flat[i]!.verseRange).toMatch(new RegExp(`^3:${previousEnd + 1}(–\\d+)?$`))
+    }
     const allNumbers = flat.flatMap((s) =>
       [...s.text.matchAll(/(?:^|\s)(\d+)\s/g)].map((m) => Number(m[1])),
     )
@@ -650,6 +660,49 @@ describe('flattenService — scripture', () => {
     })
     const flat = flattenService(service, new Map())
     expect(flat[0]?.bibleProgress).toBeLessThan(OLD_TESTAMENT_FRACTION)
+  })
+})
+
+describe('flattenService — scripture page verse ranges', () => {
+  function pagesOf(reference: string, verses: { number: number; text: string }[]) {
+    const service = makeService({
+      items: [{ id: 'item-1', type: 'scripture', reference, translation: 'ESV', displayMode: 'full' }],
+    })
+    return flattenService(
+      service,
+      new Map(),
+      new Map([['item-1', { reference, translation: 'ESV', verses }]]),
+    )
+  }
+
+  it('labels a page with its book, chapter and verses', () => {
+    const [page] = pagesOf('Romans 8:28-30', [
+      { number: 28, text: 'And we know...' },
+      { number: 29, text: 'For those whom he foreknew...' },
+      { number: 30, text: 'And those whom he predestined...' },
+    ])
+    expect(page).toMatchObject({
+      subLabel: 'ESV',
+      verseRange: '8:28–30',
+      verseBook: 'Romans',
+    })
+    // It all fits on one page, so there's no part of the passage to point out.
+    expect(page!.passagePart).toBeUndefined()
+  })
+
+  it('names a single verse without a range', () => {
+    const [page] = pagesOf('John 3:16', [{ number: 16, text: 'For God so loved the world...' }])
+    expect(page!.verseRange).toBe('3:16')
+  })
+
+  it('follows the chapter across a boundary the verses themselves do not mark', () => {
+    const [page] = pagesOf('John 3:35-4:2', [
+      { number: 35, text: 'The Father loves the Son...' },
+      { number: 36, text: 'Whoever believes in the Son...' },
+      { number: 1, text: 'Now when Jesus learned...' },
+      { number: 2, text: '(although Jesus himself did not baptize...' },
+    ])
+    expect(page!.verseRange).toBe('3:35–4:2')
   })
 })
 
