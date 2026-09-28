@@ -1,6 +1,11 @@
 import type { Service, ServiceItem } from '@/models/service'
 import type { Song } from '@/models/song'
-import type { PresentationThemeTarget, SlideLibraryItem, SlideScene } from '@/models/library'
+import type {
+  MediaItem,
+  PresentationThemeTarget,
+  SlideLibraryItem,
+  SlideScene,
+} from '@/models/library'
 import type { SongCollectionDefinition } from '@/models/settings'
 import type { ScripturePassage, ExternalAppProfile, ScriptureTextSegment } from '@/adapters/types'
 import {
@@ -251,8 +256,19 @@ export function flattenService(
   scriptureFontRange: FontSizeRange = DEFAULT_SCRIPTURE_FONT_RANGE,
   songFontRange: FontSizeRange = DEFAULT_SONG_FONT_RANGE,
   collectionDefinitions: SongCollectionDefinition[] = [],
+  mediaById: Map<string, MediaItem> = new Map(),
 ): FlatSlide[] {
   const flat: FlatSlide[] = []
+  // What a full-screen image or video is called live — on the transport bar, its Previous/Next
+  // and the phone's slide list. The item's own label when it has one (the same one the order
+  // list leads with, e.g. "Offering Video"), else the media's own title, rather than a bare
+  // "Video" that says nothing about which one. A trailing colon is a printed-heading habit
+  // ("Offertory:") that reads oddly as a name, so it's dropped.
+  function mediaItemLabel(item: ServiceItem & { mediaId: string }, fallback: string): string {
+    const label = item.bulletinLabel?.trim().replace(/:$/, '').trim()
+    const media = mediaById.get(item.mediaId)
+    return label || media?.title || media?.filename || fallback
+  }
   const serviceDateTime = serviceDateTimeIso(service)
 
   service.items.forEach((item, itemIndex) => {
@@ -462,7 +478,7 @@ export function flattenService(
         key: `${item.id}:0`,
         itemIndex,
         itemId: item.id,
-        itemLabel: 'Media',
+        itemLabel: mediaItemLabel(item, 'Image'),
         subLabel: '',
         text: '',
         mediaId: item.mediaId,
@@ -474,7 +490,7 @@ export function flattenService(
         key: `${item.id}:0`,
         itemIndex,
         itemId: item.id,
-        itemLabel: 'Video',
+        itemLabel: mediaItemLabel(item, 'Video'),
         subLabel: '',
         text: '',
         mediaId: item.mediaId,

@@ -643,6 +643,7 @@ const flatSlides = computed<FlatSlide[]>(() =>
         scriptureFontRange.value,
         songFontRange.value,
         songCollectionsStore.collections,
+        mediaById.value,
       )
     : [],
 )

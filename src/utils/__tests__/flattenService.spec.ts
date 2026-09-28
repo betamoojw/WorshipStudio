@@ -3,7 +3,7 @@ import { flattenService } from '@/utils/flattenService'
 import { OLD_TESTAMENT_FRACTION } from '@/utils/scriptureReference'
 import type { Service } from '@/models/service'
 import type { Song } from '@/models/song'
-import type { SlideLibraryItem } from '@/models/library'
+import type { MediaItem, SlideLibraryItem } from '@/models/library'
 import type { ScripturePassage } from '@/adapters/types'
 import { createBlankScene, createTextElement } from '@/utils/slideScene'
 
@@ -284,7 +284,7 @@ describe('flattenService', () => {
     const flat = flattenService(service, new Map())
     expect(flat).toHaveLength(1)
     expect(flat[0]).toMatchObject({
-      itemLabel: 'Media',
+      itemLabel: 'Image',
       mediaId: 'media-1',
       mediaKind: 'image',
       mediaFit: 'contain',
@@ -303,6 +303,40 @@ describe('flattenService', () => {
       mediaKind: 'video',
       mediaFit: 'contain',
     })
+  })
+
+  it('names a video or image by its label, else its media title, else its filename', () => {
+    const media = (id: string, title: string): [string, MediaItem] => [
+      id,
+      { id, filename: `${id}.mp4`, title, kind: 'video' } as MediaItem,
+    ]
+    const mediaById = new Map([media('m-1', 'Missions Update'), media('m-2', '')])
+    const service = makeService({
+      items: [
+        { id: 'a', type: 'video', mediaId: 'm-1', bulletinLabel: 'Offertory:' },
+        { id: 'b', type: 'video', mediaId: 'm-1' },
+        { id: 'c', type: 'video', mediaId: 'm-2' },
+        { id: 'd', type: 'media', mediaId: 'missing', fit: 'cover' },
+      ],
+    })
+    const flat = flattenService(
+      service,
+      new Map(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      mediaById,
+    )
+    // A printed heading's trailing colon is dropped; it reads oddly as a name.
+    expect(flat.map((slide) => slide.itemLabel)).toEqual([
+      'Offertory',
+      'Missions Update',
+      'm-2.mp4',
+      'Image',
+    ])
   })
 
   it('carries an external-app item through with its profile name and chosen file', () => {
