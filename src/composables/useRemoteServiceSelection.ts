@@ -22,13 +22,22 @@ export function useRemoteServiceSelection(enabled: boolean) {
   const router = useRouter()
   let unlisten: (() => void) | undefined
 
+  // The subscription resolves after an await, by which time this may already have unmounted —
+  // onUnmounted would then have run with nothing to remove, leaving the listener behind for good
+  // (see the same guard in useLiveTransport.ts).
+  let unmounted = false
   onMounted(async () => {
     if (!enabled) return
-    unlisten = await getAdapter().remote?.onCommand((command: RemoteCommand) => {
+    const stop = await getAdapter().remote?.onCommand((command: RemoteCommand) => {
       if (command.action === 'select-service' && command.serviceId) {
         router.push(`/service/${command.serviceId}`)
       }
     })
+    if (unmounted) stop?.()
+    else unlisten = stop
   })
-  onUnmounted(() => unlisten?.())
+  onUnmounted(() => {
+    unmounted = true
+    unlisten?.()
+  })
 }

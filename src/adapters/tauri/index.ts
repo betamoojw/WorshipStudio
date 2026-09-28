@@ -165,7 +165,20 @@ export function createTauriAdapter(): StudioAdapter {
     await win.setSize(new PhysicalSize(Math.round(bounds.width), Math.round(bounds.height)))
   }
 
-  async function openPresentationWindow() {
+  // One open at a time: a second start while one is under way (or already open) gets the same
+  // result instead of racing it for the `presentation` label — the loser used to fail with
+  // "already exists" and, cleaning up, close the winner's window out from under it too.
+  let openingPresentation: Promise<void> | undefined
+  function openPresentationWindow(): Promise<void> {
+    if (presentationWindow) return Promise.resolve()
+    if (!openingPresentation)
+      openingPresentation = createPresentationWindow().finally(() => {
+        openingPresentation = undefined
+      })
+    return openingPresentation
+  }
+
+  async function createPresentationWindow() {
     const bounds = await computeAudienceMonitorPhysicalBounds()
     if (!bounds) throw new Error('No configured audience display is available.')
 

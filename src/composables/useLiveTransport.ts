@@ -275,7 +275,21 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     })
   }
 
-  async function togglePresenting() {
+  // Starting takes seconds (measuring displays, opening and placing the window) and isPresenting
+  // only flips at the end, so a second toggle arriving meanwhile — a double tap on the phone,
+  // whose button re-enables as soon as its request is sent — would see "not presenting" and start
+  // a second time, the two attempts tripping over each other's window. One change at a time; a
+  // toggle that arrives mid-change is dropped, not queued, since it was aimed at a state that no
+  // longer holds.
+  let presentingChange: Promise<void> | undefined
+  function togglePresenting(): Promise<void> {
+    if (!presentingChange)
+      presentingChange = changePresenting().finally(() => {
+        presentingChange = undefined
+      })
+    return presentingChange
+  }
+  async function changePresenting() {
     if (!isPresenting.value) {
       await loadPresentationSize()
       if (readiness.value.blockers.length) {
@@ -507,7 +521,7 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
   watch(liveVideoMediaId, (_, leftMediaId) => {
     const status = liveVideoStatus.value
     liveVideoStatus.value = undefined
-    // Stopping presenting clears every place (see togglePresenting) — nothing to save.
+    // Stopping presenting clears every place (see changePresenting) — nothing to save.
     if (!leftMediaId || !isPresenting.value) return
     // Still waiting to restore it (it left again before loading far enough to seek): keep the
     // place it has rather than overwrite it with the fresh element's zero.
@@ -758,11 +772,23 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
   let unlistenAudienceNavigate: (() => void) | undefined
   let unlistenAudienceClosed: (() => void) | undefined
   let unlistenVideoStatus: (() => void) | undefined
+  // Every subscription below is made after an await, so this view can unmount before one
+  // resolves — onUnmounted has then already run with nothing to remove, and the listener
+  // outlives it for good. Confirmed live in dev: a hot reload mid-mount left a second
+  // remote-command listener behind, so every phone button ran twice (two Starts racing for one
+  // window). Unsubscribe straight away instead if that happened.
+  let unmounted = false
+  function unlessUnmounted(unlisten: (() => void) | undefined) {
+    if (!unmounted) return unlisten
+    unlisten?.()
+    return undefined
+  }
   onMounted(async () => {
     window.addEventListener('keydown', onKeydown)
     window.addEventListener('keyup', onKeyup)
     window.addEventListener('focus', loadPresentationSize)
     await loadPresentationSize()
+    if (unmounted) return
     // This composable only exists while ServiceWorkspaceView has a service open — a remote
     // device shouldn't see Start Presenting/Prev/Next/the slide picker before that's true, so
     // mount/unmount is exactly the right signal (see SharedLiveState::service_open's own doc
@@ -771,41 +797,47 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     // Remote Control (spec section 4): a paired phone's button press arrives here the same
     // way the presentation window receives slide changes — as a Tauri event, not a direct
     // function call, since the HTTP server lives entirely on the Rust side.
-    unlistenRemoteCommand = await getAdapter().remote?.onCommand((command: RemoteCommand) => {
-      if (command.action === 'next') next()
-      else if (command.action === 'previous') previous()
-      else if (command.action === 'goto' && command.index !== undefined) goLive(command.index)
-      else if (command.action === 'toggle-presenting') togglePresenting()
-      else if (command.action === 'toggle-blank-screen') toggleBlankScreen()
-      else if (command.action === 'toggle-background-only') toggleBackgroundOnly()
-      else if (command.action === 'external-app-relaunch') void retryExternalApp()
-      else if (command.action === 'external-app-close') void closeExternalApp()
-      else if (command.action === 'external-app-command' && command.commandId) {
-        const profileId = liveSlide.value?.externalApp?.profileId
-        if (profileId) void sendManualCommand(profileId, command.commandId)
-      } else if (command.action === 'video-toggle-play') toggleVideoPlayback()
-      else if (command.action === 'video-restart') sendVideoCommand({ type: 'restart' })
-    })
-    unlistenVideoStatus = await getAdapter().live.onVideoStatus((status) => {
-      liveVideoStatus.value = status
-      // Back on a video with a remembered place (see the liveVideoMediaId watch): once the
-      // fresh element has loaded enough to seek (a duration means its metadata is in), put it
-      // back where it was. Checked against what's live *now*, not just the report, since the
-      // old element can still report during its fade-out right after it left.
-      const place = videoPlaces.get(status.mediaId)
-      if (place && liveVideoMediaId.value === status.mediaId && status.duration > 0) {
-        videoPlaces.delete(status.mediaId)
-        sendVideoCommand({ type: 'seek', time: place.currentTime })
-        if (place.resumePlaying) sendVideoCommand({ type: 'play' })
-      }
-    })
+    unlistenRemoteCommand = unlessUnmounted(
+      await getAdapter().remote?.onCommand((command: RemoteCommand) => {
+        if (command.action === 'next') next()
+        else if (command.action === 'previous') previous()
+        else if (command.action === 'goto' && command.index !== undefined) goLive(command.index)
+        else if (command.action === 'toggle-presenting') togglePresenting()
+        else if (command.action === 'toggle-blank-screen') toggleBlankScreen()
+        else if (command.action === 'toggle-background-only') toggleBackgroundOnly()
+        else if (command.action === 'external-app-relaunch') void retryExternalApp()
+        else if (command.action === 'external-app-close') void closeExternalApp()
+        else if (command.action === 'external-app-command' && command.commandId) {
+          const profileId = liveSlide.value?.externalApp?.profileId
+          if (profileId) void sendManualCommand(profileId, command.commandId)
+        } else if (command.action === 'video-toggle-play') toggleVideoPlayback()
+        else if (command.action === 'video-restart') sendVideoCommand({ type: 'restart' })
+      }),
+    )
+    unlistenVideoStatus = unlessUnmounted(
+      await getAdapter().live.onVideoStatus((status) => {
+        liveVideoStatus.value = status
+        // Back on a video with a remembered place (see the liveVideoMediaId watch): once the
+        // fresh element has loaded enough to seek (a duration means its metadata is in), put it
+        // back where it was. Checked against what's live *now*, not just the report, since the
+        // old element can still report during its fade-out right after it left.
+        const place = videoPlaces.get(status.mediaId)
+        if (place && liveVideoMediaId.value === status.mediaId && status.duration > 0) {
+          videoPlaces.delete(status.mediaId)
+          sendVideoCommand({ type: 'seek', time: place.currentTime })
+          if (place.resumePlaying) sendVideoCommand({ type: 'play' })
+        }
+      }),
+    )
     // Presenting from a tablet with no separate operator screen to switch back to (spec:
     // tap zones on WebAudienceView.vue's own audience window) — same shape as the Remote Control
     // subscription just above, just a different transport (BroadcastChannel, not a Tauri event).
-    unlistenAudienceNavigate = await getAdapter().live.onNavigateRequest?.((direction) => {
-      if (direction === 'next') next()
-      else previous()
-    })
+    unlistenAudienceNavigate = unlessUnmounted(
+      await getAdapter().live.onNavigateRequest?.((direction) => {
+        if (direction === 'next') next()
+        else previous()
+      }),
+    )
     // The audience window closing on its own (its own Close button, the browser's tab close, the
     // OS closing it) — without this, the operator side would keep believing it's still
     // presenting, with Stop Presenting sitting there as if there were still something to stop.
@@ -813,11 +845,14 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     // *operator's own* Stop Presenting already set isPresenting false and closed the window
     // itself — that close also triggers the audience window's own 'closed' broadcast moments
     // later (see WebAudienceView.vue's pagehide listener), just after it's already a no-op here.
-    unlistenAudienceClosed = await getAdapter().live.onAudienceClosed?.(() => {
-      if (isPresenting.value) togglePresenting()
-    })
+    unlistenAudienceClosed = unlessUnmounted(
+      await getAdapter().live.onAudienceClosed?.(() => {
+        if (isPresenting.value) togglePresenting()
+      }),
+    )
   })
   onUnmounted(() => {
+    unmounted = true
     window.removeEventListener('keydown', onKeydown)
     window.removeEventListener('keyup', onKeyup)
     window.removeEventListener('focus', loadPresentationSize)
