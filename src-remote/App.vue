@@ -4,6 +4,7 @@ import ConnectionStatus from './components/ConnectionStatus.vue'
 import RemoteMirror from './components/RemoteMirror.vue'
 import ControlsFullControl from './components/ControlsFullControl.vue'
 import { usePoll } from './composables/usePoll'
+import { slideLabel } from '@/utils/slideLabel'
 
 const { state, connected, unpaired, retryAfterPairing } = usePoll()
 
@@ -62,10 +63,12 @@ async function submitPairInput() {
   }
 }
 
-// Same format describeSlide() in useLiveTransport.ts builds each slide's own label from — lets
-// SlidePicker highlight the live entry by a plain string match (see its own doc comment).
+// Same slideLabel() describeSlide() in useLiveTransport.ts builds each slide's own label with —
+// lets SlidePicker highlight the live entry by a plain string match (see its own doc comment).
 const currentLabel = computed(() =>
-  state.value?.content ? `${state.value.content.itemLabel} — ${state.value.content.subLabel}` : undefined,
+  state.value?.content
+    ? slideLabel(state.value.content.itemLabel, state.value.content.subLabel)
+    : undefined,
 )
 
 // View Only has no control chrome at all (feature-spec.md section 4) — nothing to move into

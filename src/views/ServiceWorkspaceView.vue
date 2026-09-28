@@ -12,7 +12,6 @@ import ExternalAppFailureAlert from '@/components/service-workspace/ExternalAppF
 import ServiceDetailsDialog from '@/components/service-workspace/ServiceDetailsDialog.vue'
 import ReadinessDialog from '@/components/service-workspace/ReadinessDialog.vue'
 import LiveTransportBar from '@/components/service-workspace/LiveTransportBar.vue'
-import LiveVideoControls from '@/components/service-workspace/LiveVideoControls.vue'
 import AudiencePresentationDialog from '@/components/service-workspace/AudiencePresentationDialog.vue'
 import AddServiceItemDialog, {
   type AddItemType,
@@ -1246,8 +1245,8 @@ const {
   backgroundOnly,
   previousDisabled,
   nextDisabled,
-  prevPreviewLabel,
-  nextPreviewLabel,
+  previousDestination,
+  nextDestination,
   goLive,
   next,
   previous,
@@ -1258,7 +1257,6 @@ const {
   sendVideoCommand,
   previewSlots,
   currentSlideLabel,
-  slidePositionLabel,
   liveContextSnippet,
   audienceDisplayAvailable,
   presentationDisplayDialogOpen,
@@ -2061,7 +2059,7 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                    Play used to also send the video to the audience screen (arriving paused)
                    while this copy played on its own. Once the video really is on the audience
                    screen, the player gives way to a still frame, so the only Play in sight is
-                   the real one under Current. -->
+                   the real one in the transport bar. -->
               <video
                 v-else-if="selectedMediaUrl && !(isPresenting && itemHasLive(selectedItemIndex))"
                 :key="selectedMediaUrl"
@@ -2099,7 +2097,7 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
             >
               {{
                 isPresenting && itemHasLive(selectedItemIndex)
-                  ? 'On the audience screen. Play it from the video controls under Current.'
+                  ? 'On the audience screen. Play it from the video controls in the bar below.'
                   : 'Preview — plays only here, never on the audience screen.'
               }}
             </p>
@@ -3364,12 +3362,6 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                 :style="{ transform: `scale(${previewScale})`, transformOrigin: 'top left' }"
               />
             </div>
-            <LiveVideoControls
-              v-if="preview.live && liveVideo"
-              :status="liveVideo"
-              :style="{ maxWidth: `${previewThumbWidth}px` }"
-              @command="sendVideoCommand"
-            />
           </div>
         </div>
       </div>
@@ -3393,19 +3385,21 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
       :compact="isShortViewport"
       :previous-disabled="previousDisabled"
       :next-disabled="nextDisabled"
-      :prev-preview-label="prevPreviewLabel"
-      :next-preview-label="nextPreviewLabel"
+      :previous="previousDestination"
+      :next="nextDestination"
       :is-presenting="isPresenting"
       :current-slide-label="currentSlideLabel"
       :live-context-snippet="liveContextSnippet"
-      :slide-position-label="slidePositionLabel"
       :background-only="backgroundOnly"
       :background-only-disabled="!liveSlide"
       :is-blank-screen="isBlankScreen"
+      :live-video="liveVideo"
+      :live-video-title="liveSlide?.itemLabel ?? ''"
       @previous="previous"
       @next="next"
       @toggle-background-only="toggleBackgroundOnly"
       @toggle-blank-screen="toggleBlankScreen"
+      @video-command="sendVideoCommand"
     />
 
     <ReadinessDialog

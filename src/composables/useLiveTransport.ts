@@ -6,6 +6,7 @@ import { cssFontFamily, resolvePresentationFontFamily } from '@/utils/presentati
 import { presentationTextEffect } from '@/utils/presentationTextEffect'
 import { resolvePresentationTheme } from '@/utils/presentationTheme'
 import { logger } from '@/utils/logger'
+import { slideLabel } from '@/utils/slideLabel'
 import type { FlatSlide } from '@/utils/flattenService'
 import type { Service } from '@/models/service'
 import type { MediaItem, SlideLibraryItem } from '@/models/library'
@@ -19,6 +20,13 @@ import type {
   LiveVideoStatus,
   RemoteCommand,
 } from '@/adapters/types'
+
+/** What Previous or Next will move to, as the transport bar names it (see describeDestination). */
+export interface TransportDestination {
+  label: string
+  /** Moving there leaves the live item for another one. */
+  newItem: boolean
+}
 
 function errorMessage(e: unknown, fallback: string): string {
   if (typeof e === 'string') return e
@@ -109,7 +117,7 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
 
   function describeSlide(index: number): string {
     const slide = flatSlides.value[index]
-    if (slide) return `${slide.itemLabel} — ${slide.subLabel}`
+    if (slide) return slideLabel(slide.itemLabel, slide.subLabel)
     return flatSlides.value.length === 0 ? 'Service is empty' : 'End of service'
   }
   const nextIndex = computed(() =>
@@ -122,11 +130,22 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
   const nextDisabled = computed(
     () => flatSlides.value.length === 0 || flatIndex.value >= flatSlides.value.length - 1,
   )
-  const nextPreviewLabel = computed(() =>
-    nextDisabled.value ? 'End of service' : describeSlide(nextIndex.value),
+  // Within the live item, only the part that differs ("Verse 3") — the item's own name is
+  // already the live label in the middle of the bar, and repeating it is what made these cut off.
+  // Crossing into another item names that item instead and says so ("Next item"), since that
+  // press leaves the song or passage on screen.
+  function describeDestination(index: number, disabled: boolean, edge: string) {
+    const target = disabled ? undefined : flatSlides.value[index]
+    if (!target) return { label: edge, newItem: false }
+    if (target.itemIndex === liveSlide.value?.itemIndex)
+      return { label: target.subLabel || target.itemLabel, newItem: false }
+    return { label: target.itemLabel, newItem: true }
+  }
+  const nextDestination = computed<TransportDestination>(() =>
+    describeDestination(nextIndex.value, nextDisabled.value, 'End of service'),
   )
-  const prevPreviewLabel = computed(() =>
-    previousDisabled.value ? 'Beginning of service' : describeSlide(prevIndex.value),
+  const previousDestination = computed<TransportDestination>(() =>
+    describeDestination(prevIndex.value, previousDisabled.value, 'Beginning of service'),
   )
 
   function goLive(index: number) {
@@ -693,13 +712,7 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
   const currentSlideLabel = computed(() => {
     if (isBlankScreen.value) return 'Blank Screen'
     if (!liveSlide.value) return 'No Slide Selected'
-    return `${liveSlide.value.itemLabel} — ${liveSlide.value.subLabel}`
-  })
-  const slidePositionLabel = computed(() => {
-    if (flatSlides.value.length === 0) return 'No Slides'
-    if (isBlankScreen.value) return 'Screen Blank'
-    if (flatIndex.value < 0) return `${flatSlides.value.length} Slides Ready`
-    return `Slide ${flatIndex.value + 1} of ${flatSlides.value.length}`
+    return slideLabel(liveSlide.value.itemLabel, liveSlide.value.subLabel)
   })
   const liveContextSnippet = computed(() => {
     const firstLine = liveSlide.value?.text.split('\n')[0]
@@ -881,8 +894,8 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     backgroundOnly,
     previousDisabled,
     nextDisabled,
-    prevPreviewLabel,
-    nextPreviewLabel,
+    previousDestination,
+    nextDestination,
     goLive,
     next,
     previous,
@@ -896,7 +909,6 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     toggleVideoPlayback,
     previewSlots,
     currentSlideLabel,
-    slidePositionLabel,
     liveContextSnippet,
     audienceDisplayAvailable,
     presentationDisplayDialogOpen,

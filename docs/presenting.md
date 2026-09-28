@@ -37,6 +37,12 @@ Previous and Next step through **every slide in the whole service** in order —
 pages, announcement slides, media — not just the item you're looking at. Crossing from the last
 slide of one item into the first of the next is automatic; you never have to "open" the next item.
 
+Each button says where it goes. Within the item on screen that's just the part — **Verse 3** —
+since the item's own name is already in the middle of the bar. When the next press would leave
+it for another item, the button says **Next item** (or **Previous item**) and names it.
+
+The bar's top edge shows whether you're presenting: **red while live**, a dim grey otherwise.
+
 **Blank Screen** and **Background Only** are overrides, not edits. Neither changes the service,
 and both remember where you were.
 
@@ -49,9 +55,10 @@ while clearing the words, which suits a musical interlude or the moments around 
 ## Videos
 
 A video goes live **paused on its first frame** — nothing plays until you say so. While it's live,
-controls appear under the **Current** preview: **Play/Pause**, **Back to start** (returns to the
-first frame, paused), a bar to jump to any point, and the time played and total length. The
-Current preview plays along, muted, so you can follow it without looking up.
+the middle of the transport bar becomes its controls: **Play/Pause**, **Back to start** (returns
+to the first frame, paused), the time played and total length, and — where the bar has room — a
+bar to jump to any point. The **Current** preview plays along, muted, so you can follow it without
+looking up.
 
 When a video finishes it holds on its last frame until you move on. **Blank Screen** and
 **Background Only** both take it off the screen and pick up where it was when you turn them off —
