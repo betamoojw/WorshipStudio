@@ -637,6 +637,16 @@ describe('toHtml', () => {
     expect(html).toContain('&lt;script&gt;')
   })
 
+  it('sets no font, so a paste takes on the font of wherever it lands', () => {
+    const html = toHtml({
+      title: 'Order of Worship',
+      dateLine: 'Sunday',
+      lines: [{ text: 'Call to Worship', person: 'Pastor' }],
+      footer: { title: 'Thought to Ponder', text: 'Be still.' },
+    })
+    expect(html).not.toMatch(/font-family/i)
+  })
+
   it('renders and escapes a note', () => {
     const html = toHtml({
       title: 'Order of Worship',
