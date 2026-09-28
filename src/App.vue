@@ -168,14 +168,14 @@ const isPresentationWindow =
   getCurrentWindow().label === 'presentation'
 
 // Same reasoning as the presentation window above — the Display Setup "Identify" button
-// (SettingsView) opens this same bundle in a short-lived window labeled "identify", also
+// (SettingsView) opens this same bundle in a short-lived window labeled "identify-<n>", also
 // never reached through routing. Its label text rides along as a real query string (not a
 // `#/...` hash — this app uses path-based createWebHistory routing, so a hash fragment would
 // be inert) since Tauri's WebviewWindowOptions has no field for arbitrary custom data.
 const isIdentifyWindow =
   typeof window !== 'undefined' &&
   !!window.__TAURI_INTERNALS__ &&
-  getCurrentWindow().label === 'identify'
+  getCurrentWindow().label.startsWith('identify-')
 const identifyLabel =
   typeof window !== 'undefined'
     ? (new URLSearchParams(window.location.search).get('identify') ?? '')

@@ -1,6 +1,12 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { availableMonitors, currentMonitor, getCurrentWindow } from '@tauri-apps/api/window'
+import {
+  availableMonitors,
+  currentMonitor,
+  getCurrentWindow,
+  PhysicalPosition,
+  PhysicalSize,
+} from '@tauri-apps/api/window'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
@@ -62,6 +68,7 @@ export function createTauriAdapter(): StudioAdapter {
   let lastLiveContent: LiveSlideContent | null = null
   let unlistenPresentationReady: UnlistenFn | undefined
   let identifyWindow: WebviewWindow | undefined
+  let identifyWindowCount = 0
   let helpWindow: WebviewWindow | undefined
 
   // The OS doesn't hand back a stable per-monitor id, so the one thing that actually stays
@@ -85,14 +92,7 @@ export function createTauriAdapter(): StudioAdapter {
     return left.position.x === right.position.x && left.position.y === right.position.y
   }
 
-  interface PresentationBounds {
-    x: number
-    y: number
-    width: number
-    height: number
-  }
-
-  // Shared by computePresentationBounds and the External App Hand-off launch below — both need
+  // Shared by computePresentationSize and computeAudienceMonitorPhysicalBounds below — both need
   // "which monitor is Audience", just converted to different pixel spaces afterward (see each
   // caller). Presentation only runs on a distinct monitor explicitly assigned as Audience.
   // Guessing from monitor order risks putting private operator content on the projector after
@@ -112,30 +112,23 @@ export function createTauriAdapter(): StudioAdapter {
     )
   }
 
-  // Shared by openPresentationWindow (the real thing) and getPresentationSize (the operator's
-  // Previous/Current/Next preview thumbnails, which need the exact same size to make the same
-  // auto-fit sizing/wrapping decisions the real presentation window would) — computed once
-  // here so the two can never drift apart into two different answers for "how big is it".
-  async function computePresentationBounds(): Promise<PresentationBounds | undefined> {
+  // For getPresentationSize (the operator's Previous/Current/Next preview thumbnails, which need
+  // the exact size the presentation window's page will lay out at to make the same auto-fit
+  // sizing/wrapping decisions) — logical at the audience monitor's own scale factor, which is the
+  // CSS viewport a full-monitor window there gets.
+  async function computePresentationSize(): Promise<{ width: number; height: number } | undefined> {
     const assignedAudience = await findAssignedAudienceMonitor()
     if (!assignedAudience) return undefined
     // Presentation uses the monitor's complete bounds, not its work area. The work area omits
     // reserved desktop UI such as the Windows taskbar, which both made the audience output short
     // and caused the operator previews to model the wrong presentation aspect ratio.
-    const monitorPosition = assignedAudience.position.toLogical(assignedAudience.scaleFactor)
     const monitorSize = assignedAudience.size.toLogical(assignedAudience.scaleFactor)
-    return {
-      x: monitorPosition.x,
-      y: monitorPosition.y,
-      width: monitorSize.width,
-      height: monitorSize.height,
-    }
+    return { width: monitorSize.width, height: monitorSize.height }
   }
 
-  // External App Hand-off's window positioning goes through raw Win32 SetWindowPos (see
-  // src-tauri/src/domain/win32.rs), which works in *physical* pixels — unlike
-  // computePresentationBounds above (used only to create Tauri's own WebviewWindow, whose x/y/
-  // width/height are logical), this deliberately skips the .toLogical() conversion.
+  // Physical pixels — where the presentation window is placed (see placeWindow for why never
+  // logical) and what External App Hand-off's raw Win32 SetWindowPos positioning takes (see
+  // src-tauri/src/domain/win32.rs).
   async function computeAudienceMonitorPhysicalBounds(): Promise<WindowPosition | undefined> {
     const assignedAudience = await findAssignedAudienceMonitor()
     if (!assignedAudience) return undefined
@@ -148,32 +141,37 @@ export function createTauriAdapter(): StudioAdapter {
     }
   }
 
-  async function openPresentationWindow() {
-    const bounds = await computePresentationBounds()
-    if (!bounds) throw new Error('No configured audience display is available.')
-
-    presentationWindow = new WebviewWindow('presentation', {
-      url: 'index.html',
-      x: bounds.x,
-      y: bounds.y,
-      width: bounds.width,
-      height: bounds.height,
-      title: 'Worship Studio — Presentation',
-      decorations: false,
-      fullscreen: true,
-      skipTaskbar: true,
-      resizable: false,
-      focus: false,
-      // Ctrl/Cmd +/-/0 as a quick manual scaling knob for the audience output — the same
-      // capability the web build's audience window already gets for free from being a real
-      // browser window. Windows: WebView2's IsZoomControlEnabled; macOS/Linux: Tauri's own
-      // ctrl/cmd +/- polyfill (20% steps, 20%-1000%).
-      zoomHotkeysEnabled: true,
+  // Tauri's window-creation x/y/width/height are logical pixels, and it converts them back to
+  // physical with a scale factor that isn't necessarily the target monitor's own. On a desk
+  // mixing scale factors that puts the window on the wrong monitor entirely — confirmed live
+  // with a 100% ultrawide beside a 150% audience display at physical x=5120: its logical x
+  // (5120 / 1.5 ≈ 3413) came back as physical 3413, still on the ultrawide, so both Identify
+  // labels and the presentation window itself landed there. Physical pixels are one shared
+  // desktop-wide space with no conversion to get wrong, so a window that has to land on a
+  // specific monitor is created hidden, then placed and sized in physical pixels.
+  async function placeWindow(
+    win: WebviewWindow,
+    bounds: { x: number; y: number; width: number; height: number },
+  ) {
+    await new Promise<void>((resolve, reject) => {
+      void win.once('tauri://created', () => resolve())
+      void win.once<unknown>('tauri://error', (event) => reject(new Error(String(event.payload))))
     })
+    await win.setPosition(new PhysicalPosition(Math.round(bounds.x), Math.round(bounds.y)))
+    // After the move, not before: crossing onto a monitor with a different scale factor makes
+    // Windows rescale the window, which would undo a size set first.
+    await win.setSize(new PhysicalSize(Math.round(bounds.width), Math.round(bounds.height)))
+  }
+
+  async function openPresentationWindow() {
+    const bounds = await computeAudienceMonitorPhysicalBounds()
+    if (!bounds) throw new Error('No configured audience display is available.')
 
     // The presentation window's own app instance signals readiness (see PresentationView.vue)
     // once it's actually listening — Tauri events aren't queued/replayed, so sending content
     // before that would otherwise be silently dropped and leave it blank until the next cue.
+    // Subscribed before the window exists, since placing it (below) takes a few round trips and
+    // a fast load could otherwise signal ready before anyone was listening.
     unlistenPresentationReady = await listen('presentation:ready', () => {
       void emit('live:slide-changed', lastLiveContent)
       // Windows appears to force focus onto a window the moment it enters fullscreen, regardless
@@ -184,6 +182,32 @@ export function createTauriAdapter(): StudioAdapter {
       // the OS's own focus-steal can happen slightly after that point too.
       void getCurrentWindow().setFocus()
     })
+
+    presentationWindow = new WebviewWindow('presentation', {
+      url: 'index.html',
+      title: 'Worship Studio — Presentation',
+      decorations: false,
+      skipTaskbar: true,
+      resizable: false,
+      focus: false,
+      // Hidden until placeWindow has put it on the audience monitor — see placeWindow for why it
+      // can't just be created there. Fullscreen waits too, since it fills whichever monitor the
+      // window is on at the time.
+      visible: false,
+      // Ctrl/Cmd +/-/0 as a quick manual scaling knob for the audience output — the same
+      // capability the web build's audience window already gets for free from being a real
+      // browser window. Windows: WebView2's IsZoomControlEnabled; macOS/Linux: Tauri's own
+      // ctrl/cmd +/- polyfill (20% steps, 20%-1000%).
+      zoomHotkeysEnabled: true,
+    })
+    try {
+      await placeWindow(presentationWindow, bounds)
+      await presentationWindow.show()
+      await presentationWindow.setFullscreen(true)
+    } catch (e) {
+      await closePresentationWindow().catch(() => {})
+      throw e
+    }
   }
 
   async function closePresentationWindow() {
@@ -206,39 +230,53 @@ export function createTauriAdapter(): StudioAdapter {
     const monitor = monitors[index]
     if (!monitor) return
 
-    const workAreaPosition = monitor.workArea.position.toLogical(monitor.scaleFactor)
-    const workAreaSize = monitor.workArea.size.toLogical(monitor.scaleFactor)
-    const width = 360
-    const height = 240
-    const x = workAreaPosition.x + workAreaSize.width / 2 - width / 2
-    const y = workAreaPosition.y + workAreaSize.height / 2 - height / 2
+    // Physical pixels throughout — see placeWindow. The label is 360x240 at the monitor's own
+    // scale, so it reads the same size on every screen.
+    const workArea = monitor.workArea
+    const width = 360 * monitor.scaleFactor
+    const height = 240 * monitor.scaleFactor
+    const x = workArea.position.x + workArea.size.width / 2 - width / 2
+    const y = workArea.position.y + workArea.size.height / 2 - height / 2
 
     if (identifyWindow) {
-      await identifyWindow.close()
+      // Already gone if its own timer beat us here; nothing to do either way.
+      await identifyWindow.close().catch(() => {})
       identifyWindow = undefined
     }
     const label = friendlyDisplayName(monitor.name, index)
-    const thisWindow = new WebviewWindow('identify', {
+    // A fresh label every time. Tauri addresses a window by its label, so with one shared label a
+    // quick second click tried to create a window whose label was still taken (and failed
+    // silently), and the first window's timer below closed whichever window held the label by
+    // then — the new one.
+    const thisWindow = new WebviewWindow(`identify-${++identifyWindowCount}`, {
       // A real query string, not appended after the router's own `#/...` hash fragment, which
       // would just become part of vue-router's route instead of reaching here. Read the same
       // way the presentation window is detected (its Tauri window label), not through
       // vue-router — this window never gets routed at all, same reasoning as PresentationView.
       url: `index.html?identify=${encodeURIComponent(label)}`,
-      x,
-      y,
-      width,
-      height,
       decorations: false,
       alwaysOnTop: true,
       skipTaskbar: true,
       resizable: false,
       focus: false,
+      visible: false,
     })
     identifyWindow = thisWindow
     setTimeout(() => {
       if (identifyWindow === thisWindow) identifyWindow = undefined
-      void thisWindow.close()
+      // Identifying another display within the 2.5s closes this one early — closing it again
+      // here would reject with "window not found".
+      void thisWindow.close().catch(() => {})
     }, 2500)
+    try {
+      await placeWindow(thisWindow, { x, y, width, height })
+      // Another Identify click while this one was still being placed has replaced it — and its
+      // own attempt to close this one may have come too early to take, so close it here.
+      if (identifyWindow === thisWindow) await thisWindow.show()
+      else await thisWindow.close()
+    } catch {
+      // Closed (by the timer above or another Identify click) before it finished being placed.
+    }
   }
 
   // Opens the bundled VitePress help site at the given topic — or, if it's already open,
@@ -482,10 +520,7 @@ export function createTauriAdapter(): StudioAdapter {
         lastLiveContent = content ?? null
         await emit('live:slide-changed', lastLiveContent)
       },
-      getPresentationSize: async () => {
-        const bounds = await computePresentationBounds()
-        return bounds ? { width: bounds.width, height: bounds.height } : undefined
-      },
+      getPresentationSize: () => computePresentationSize(),
     },
     // displays/externalApps are Windows-only in practice (live-presentation role
     // assignment, Win32 window hand-off). They're wired up unconditionally here for now;
@@ -503,14 +538,16 @@ export function createTauriAdapter(): StudioAdapter {
         ])
         return monitors.map((monitor, index): DisplayInfo => {
           const id = monitorId(monitor, index)
-          const size = monitor.size.toLogical(monitor.scaleFactor)
           const role = isSameMonitor(monitor, operatorMonitor)
             ? 'operator'
             : ((machineSettings.displayRoles[id] as DisplayRole | undefined) ?? 'not-used')
           return {
             id,
             name: friendlyDisplayName(monitor.name, index),
-            resolution: `${Math.round(size.width)}x${Math.round(size.height)}`,
+            // Physical, as Windows' own Display settings shows it — the logical size (1280x720
+            // for a 1920x1080 screen at 150%) is what a page lays out at, not what anyone
+            // would recognize as the screen's resolution.
+            resolution: `${monitor.size.width}x${monitor.size.height}`,
             role,
           }
         })
