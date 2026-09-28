@@ -20,10 +20,11 @@
  */
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import SlideContentRenderer from '@/components/live/SlideContentRenderer.vue'
-import type { LiveSlideContent } from '@/adapters/types'
+import type { LiveSlideContent, LiveVideoStatus } from '@/adapters/types'
 import { AUDIENCE_CHANNEL_NAME, type AudienceMessage } from '@/utils/audienceChannel'
 
 const current = ref<LiveSlideContent>()
+const rendererRef = ref<InstanceType<typeof SlideContentRenderer>>()
 const isFullscreen = ref(false)
 const screens = ref<ScreenDetailed[]>([])
 const screenPickerOpen = ref(false)
@@ -96,6 +97,13 @@ function broadcastClosed() {
   channel?.postMessage(message)
 }
 
+// Where the live video actually is, back to the operator's transport controls — the other half
+// of the 'video-command' handling in onMounted below.
+function reportVideoStatus(status: LiveVideoStatus) {
+  const message: AudienceMessage = { type: 'video-status', status }
+  channel?.postMessage(message)
+}
+
 // Presenting from a tablet with no separate operator screen to switch back to (or no other
 // screen at all): tapping the left/right edge of the slide itself requests Previous/Next, same
 // as the operator's own on-screen buttons — see LivePresentationPort's `onNavigateRequest` and
@@ -139,6 +147,7 @@ onMounted(() => {
   channel.onmessage = (event: MessageEvent<AudienceMessage>) => {
     if (event.data?.type === 'content') current.value = event.data.content ?? undefined
     if (event.data?.type === 'stop') closeSelf()
+    if (event.data?.type === 'video-command') rendererRef.value?.controlVideo(event.data.command)
   }
   const readyMessage: AudienceMessage = { type: 'ready' }
   channel.postMessage(readyMessage)
@@ -159,7 +168,12 @@ onBeforeUnmount(() => {
        reveals the overlay below instead of navigating. Every actual button stops propagation
        (@click.stop) so tapping one doesn't also register as a nav-zone tap underneath it. -->
   <div class="audience-root" @click="handleTap">
-    <SlideContentRenderer :content="current" transition />
+    <SlideContentRenderer
+      ref="rendererRef"
+      :content="current"
+      transition
+      @video-status="reportVideoStatus"
+    />
 
     <!-- Tap-to-reveal only — no persistent chrome once presenting for real. Kept small/low-key
          like RemoteMirror.vue's mute toggle. -->

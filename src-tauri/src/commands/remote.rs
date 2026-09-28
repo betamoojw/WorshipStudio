@@ -4,7 +4,9 @@ use tauri::{AppHandle, Manager};
 use crate::domain::{people, remote};
 use crate::models::{LiveSlideContent, RemoteDevice, RemoteDeviceSummary};
 use crate::paths::{library_root, now_iso, remote_devices_path, this_device_name};
-use crate::remote_server::{self, ExternalAppCommandSummary, LiveStateUpdate, RemoteServerHandle};
+use crate::remote_server::{
+    self, ExternalAppCommandSummary, LiveStateUpdate, RemoteServerHandle, VideoPlayback,
+};
 
 #[tauri::command]
 pub fn list_remote_devices(app: AppHandle) -> Result<Vec<RemoteDeviceSummary>, String> {
@@ -137,6 +139,8 @@ pub struct LiveStateUpdateInput {
     pub display_height: Option<u32>,
     pub is_blank_screen: bool,
     pub background_only: bool,
+    #[serde(default)]
+    pub video: Option<VideoPlayback>,
 }
 
 /// Pushed from the operator window whenever the live slide or presenting state changes (see
@@ -158,6 +162,7 @@ pub async fn update_remote_live_state(app: AppHandle, payload: LiveStateUpdateIn
             display_size,
             is_blank_screen: payload.is_blank_screen,
             background_only: payload.background_only,
+            video: payload.video,
         })
         .await;
 }

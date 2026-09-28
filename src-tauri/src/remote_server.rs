@@ -71,6 +71,17 @@ struct DisplaySize {
     height: u32,
 }
 
+/// The live foreground video's play state and position, as the audience output last reported it
+/// (see useLiveTransport.ts's `liveVideo`) — lets the phone's mirror follow along and show the
+/// right one of Play/Pause. Seconds throughout.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoPlayback {
+    pub playing: bool,
+    pub current_time: f64,
+    pub duration: f64,
+}
+
 /// Bundles `RemoteServerHandle::update()`'s params — grew past the point a positional arg list
 /// stayed readable (six and counting), and a struct also lets `commands::remote` build it
 /// straight from the Tauri command's own deserialized input without restating every field.
@@ -82,6 +93,7 @@ pub struct LiveStateUpdate {
     pub display_size: Option<(u32, u32)>,
     pub is_blank_screen: bool,
     pub background_only: bool,
+    pub video: Option<VideoPlayback>,
 }
 
 #[derive(Default)]
@@ -100,6 +112,8 @@ struct SharedLiveState {
     display_size: Option<DisplaySize>,
     is_blank_screen: bool,
     background_only: bool,
+    /// Set only while a video is the live foreground content.
+    video: Option<VideoPlayback>,
     /// True whenever ServiceWorkspaceView is mounted, regardless of `is_presenting` — a device
     /// shouldn't see Start Presenting/Prev/Next/the slide picker until a service has actually
     /// been opened on the operator side (there's nothing yet for those to act on). Set/cleared
@@ -187,6 +201,7 @@ impl RemoteServerHandle {
             .map(|(width, height)| DisplaySize { width, height });
         state.is_blank_screen = update.is_blank_screen;
         state.background_only = update.background_only;
+        state.video = update.video;
     }
 
     /// Separate from `update()` above by design (see the plan/feature-spec.md section 4) — the
@@ -512,6 +527,8 @@ struct StatePayload {
     display_size: Option<DisplaySize>,
     is_blank_screen: bool,
     background_only: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    video: Option<VideoPlayback>,
     /// See `SharedLiveState::service_open`'s own doc comment.
     service_open: bool,
 }
@@ -532,6 +549,7 @@ async fn get_state(State(handle): State<RemoteServerHandle>, headers: HeaderMap)
         display_size: live.display_size,
         is_blank_screen: live.is_blank_screen,
         background_only: live.background_only,
+        video: live.video,
         service_open: live.service_open,
     })
     .into_response()
@@ -568,6 +586,8 @@ fn action_allowed(access_level: &str, action: &str) -> bool {
                 | "external-app-relaunch"
                 | "external-app-close"
                 | "external-app-command"
+                | "video-toggle-play"
+                | "video-restart"
         ),
         _ => false,
     }
@@ -997,6 +1017,8 @@ mod tests {
         assert!(!action_allowed("view-only", "external-app-relaunch"));
         assert!(!action_allowed("view-only", "external-app-close"));
         assert!(!action_allowed("view-only", "external-app-command"));
+        assert!(!action_allowed("view-only", "video-toggle-play"));
+        assert!(!action_allowed("view-only", "video-restart"));
     }
 
     #[test]
@@ -1011,6 +1033,8 @@ mod tests {
         assert!(action_allowed("full-control", "external-app-relaunch"));
         assert!(action_allowed("full-control", "external-app-close"));
         assert!(action_allowed("full-control", "external-app-command"));
+        assert!(action_allowed("full-control", "video-toggle-play"));
+        assert!(action_allowed("full-control", "video-restart"));
     }
 
     #[test]

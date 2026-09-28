@@ -17,6 +17,8 @@ import type {
   DisplayInfo,
   DisplayRole,
   LiveSlideContent,
+  LiveVideoCommand,
+  LiveVideoStatus,
   RemoteDevice,
   RemoteCommand,
   SyncStatus,
@@ -521,6 +523,12 @@ export function createTauriAdapter(): StudioAdapter {
         await emit('live:slide-changed', lastLiveContent)
       },
       getPresentationSize: () => computePresentationSize(),
+      // Same emit/listen bridge as live:slide-changed — the presentation window (see
+      // PresentationView.vue) owns the real <video> element, so commands go to it and its
+      // play state/position come back.
+      sendVideoCommand: (command) => emit<LiveVideoCommand>('live:video-command', command),
+      onVideoStatus: (callback) =>
+        listen<LiveVideoStatus>('live:video-status', (event) => callback(event.payload)),
     },
     // displays/externalApps are Windows-only in practice (live-presentation role
     // assignment, Win32 window hand-off). They're wired up unconditionally here for now;
@@ -642,6 +650,7 @@ export function createTauriAdapter(): StudioAdapter {
             displayHeight: update.displaySize.height,
             isBlankScreen: update.isBlankScreen,
             backgroundOnly: update.backgroundOnly,
+            video: update.video ?? null,
           },
         }),
       pushServiceOutline: (slides) => invoke('update_remote_service_outline', { slides }),

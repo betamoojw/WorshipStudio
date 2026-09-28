@@ -20,7 +20,7 @@
  * or any screen-picker UI at all.
  */
 
-import type { LivePresentationPort, LiveSlideContent } from '@/adapters/types'
+import type { LivePresentationPort, LiveSlideContent, LiveVideoStatus } from '@/adapters/types'
 import { AUDIENCE_CHANNEL_NAME, type AudienceMessage } from './audienceChannel'
 
 /**
@@ -61,6 +61,7 @@ export function createLiveAudienceWindowPort(): LivePresentationPort {
   // listener list.
   let navigateCallback: ((direction: 'next' | 'previous') => void) | undefined
   let audienceClosedCallback: (() => void) | undefined
+  let videoStatusCallback: ((status: LiveVideoStatus) => void) | undefined
 
   channel.onmessage = (event: MessageEvent<AudienceMessage>) => {
     if (event.data?.type === 'ready') {
@@ -72,6 +73,8 @@ export function createLiveAudienceWindowPort(): LivePresentationPort {
       navigateCallback?.('previous')
     } else if (event.data?.type === 'closed') {
       audienceClosedCallback?.()
+    } else if (event.data?.type === 'video-status') {
+      videoStatusCallback?.(event.data.status)
     }
   }
 
@@ -132,6 +135,16 @@ export function createLiveAudienceWindowPort(): LivePresentationPort {
       audienceClosedCallback = callback
       return () => {
         if (audienceClosedCallback === callback) audienceClosedCallback = undefined
+      }
+    },
+    sendVideoCommand: async (command) => {
+      const message: AudienceMessage = { type: 'video-command', command }
+      channel.postMessage(message)
+    },
+    onVideoStatus: async (callback) => {
+      videoStatusCallback = callback
+      return () => {
+        if (videoStatusCallback === callback) videoStatusCallback = undefined
       }
     },
   }

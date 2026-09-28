@@ -94,6 +94,8 @@ describe('useLiveTransport selection follows live', () => {
         setLiveContent: vi.fn().mockResolvedValue(undefined),
         stopPresenting: vi.fn().mockResolvedValue(undefined),
         getPresentationSize: vi.fn().mockResolvedValue({ width: 1920, height: 1080 }),
+        sendVideoCommand: vi.fn().mockResolvedValue(undefined),
+        onVideoStatus: vi.fn().mockResolvedValue(() => {}),
       },
     })
   })

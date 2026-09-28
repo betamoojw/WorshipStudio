@@ -428,6 +428,30 @@ export interface ScriptureTextSegment {
   value: string
 }
 
+/** An operator's transport action on the live foreground video (a Media/Video item's own video,
+ *  never a theme's looping background). Videos go live paused on their first frame and only
+ *  play when the operator says so — see SlideContentRenderer.vue's `controlVideo`. `restart`
+ *  cues back to the first frame, paused, rather than restarting playback. */
+export type LiveVideoCommand =
+  { type: 'play' } | { type: 'pause' } | { type: 'restart' } | { type: 'seek'; time: number }
+
+/** Where the audience output's live foreground video actually is — reported back from the
+ *  presentation/audience window, since only it owns the real `<video>` element. */
+export interface LiveVideoStatus {
+  /** Which video this describes, so a late report from the previous slide's video can't be
+   *  mistaken for the one live now. */
+  mediaId: string
+  playing: boolean
+  /** Seconds. */
+  currentTime: number
+  /** Seconds; 0 until the video's metadata has loaded. */
+  duration: number
+  /** The audience window refused to start playback — a browser audience window (web/tablet
+   *  build) that hasn't had a click inside it yet isn't allowed to play audio. Never set by the
+   *  Tauri presentation window. */
+  playBlocked?: boolean
+}
+
 export interface LivePresentationPort {
   /**
    * Opens the audience-facing presentation window on the distinct monitor configured with the
@@ -466,6 +490,11 @@ export interface LivePresentationPort {
    * there's no separate "it closed on its own" case to catch. Returns an unsubscribe function.
    */
   onAudienceClosed?(callback: () => void): Promise<() => void>
+  /** Sends a transport action to the live foreground video in the audience output. */
+  sendVideoCommand(command: LiveVideoCommand): Promise<void>
+  /** Subscribes to the audience output's reports of where its live foreground video is (play
+   *  state, position, duration). Returns an unsubscribe function. */
+  onVideoStatus(callback: (status: LiveVideoStatus) => void): Promise<() => void>
 }
 
 /** The configured Audience display's current full bounds — computed fresh from the monitor
@@ -605,6 +634,8 @@ export interface RemoteCommand {
     | 'external-app-relaunch'
     | 'external-app-close'
     | 'external-app-command'
+    | 'video-toggle-play'
+    | 'video-restart'
   index?: number
   serviceId?: string
   /** `external-app-command` only — which of the live item's ExternalAppKeyCommand entries to
@@ -631,6 +662,10 @@ export interface RemoteLiveStateUpdate {
   displaySize: { width: number; height: number }
   isBlankScreen: boolean
   backgroundOnly: boolean
+  /** Set while a video is the live foreground content — the audience output's own play state
+   *  and position (see LiveVideoStatus), so the phone's mirror can follow along and show
+   *  Play/Pause as the right one. */
+  video?: { playing: boolean; currentTime: number; duration: number }
 }
 
 /** Tauri-only — needs the bundled local HTTP server; not meaningful in the static demo. */

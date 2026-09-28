@@ -197,6 +197,7 @@ const spacious = computed(() => showControlsPanel.value && !isSideBySide.value)
         :external-app-active="!!state?.isPresenting && !!state?.externalAppActive"
         :external-app-commands="state?.externalAppCommands"
         :is-blank-screen="!!state?.isPresenting && !!state?.isBlankScreen"
+        :video="state?.isPresenting ? state?.video : undefined"
         :display-size="state?.displaySize"
         :has-controls="hasControls"
         class="mirror-slot"

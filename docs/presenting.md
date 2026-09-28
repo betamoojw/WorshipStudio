@@ -31,6 +31,7 @@ Once you're live, the transport bar runs along the bottom of the workspace.
 | **Next** | <kbd>→</kbd> | Forward one slide |
 | **Blank Screen** | <kbd>B</kbd> | Hides everything. Press again to restore exactly where you were |
 | **Background Only** | <kbd>G</kbd> | Keeps the background, hides the words |
+| **Play / Pause** | <kbd>Space</kbd> | Starts or pauses the live video (only while one is live) |
 
 Previous and Next step through **every slide in the whole service** in order — verses, scripture
 pages, announcement slides, media — not just the item you're looking at. Crossing from the last
@@ -44,6 +45,29 @@ and both remember where you were.
 anything where a bright wall is a distraction. **Background Only** keeps the room's visual mood
 while clearing the words, which suits a musical interlude or the moments around communion.
 :::
+
+## Videos
+
+A video goes live **paused on its first frame** — nothing plays until you say so. While it's live,
+controls appear under the **Current** preview: **Play/Pause**, **Back to start** (returns to the
+first frame, paused), a bar to jump to any point, and the time played and total length. The
+Current preview plays along, muted, so you can follow it without looking up.
+
+When a video finishes it holds on its last frame until you move on. **Blank Screen** and
+**Background Only** both take it off the screen and pick up where it was when you turn them off —
+playing again if it was playing.
+
+Moving on never waits for a video — Next and Previous always work. A video you leave part-way
+keeps its place while you're presenting, so an accidental Next is one Previous away from fixing:
+it comes back where it was, **paused**, ready for <kbd>Space</kbd>. A video that had finished
+starts over instead. Stopping the presentation forgets every place.
+
+A full-screen video or image has no background of its own, so **Background Only** shows the
+background of the nearest slide before it in the service instead — or the nearest one after it, if
+nothing earlier has one — so the screen keeps the room's look rather than going dark. Only when no
+slide in the service has a background does it go black.
+
+The audience screen never shows video controls; the congregation sees only the video.
 
 ## Reading ahead while you present
 
@@ -76,7 +100,8 @@ comes next. Moving from one part of the service to the next stays a decision you
 
 **From a phone or tablet.** Pair a device under [Settings → Remote Control](/settings) and it
 becomes a remote: **View Only** mirrors the presentation screen, and **Full Control** adds
-Previous/Next and the ability to jump to any slide. Useful for a worship leader on the platform
+Previous/Next, the ability to jump to any slide, and Play/Pause and Back to start while a video is
+live. Useful for a worship leader on the platform
 who needs to see what's up without a sightline to the operator.
 
 **From the audience window itself.** A phone or tablet with only one screen has nowhere to put an
