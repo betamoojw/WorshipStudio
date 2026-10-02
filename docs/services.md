@@ -43,7 +43,7 @@ transport bar steps through every slide in the service with Next/Previous, Blank
 Background Only controls — see [Presenting](/presenting) for running a service live, including
 the keyboard shortcuts and how to work in the plan without disturbing what's on screen.
 
-![Service Workspace — the order of service on the left with its edit button, a selected song's arrangement blocks in the middle under Change Song and Edit Arrangement, and the live Presentation preview panel on the right](/screenshots/service-workspace.webp)
+![Service Workspace — the order of service on the left with its edit button, a selected song's arrangement blocks in the middle under Change Song and Edit Arrangement, the live Presentation preview panel on the right, and the transport bar along the bottom with Previous, Background Only, Blank Screen and Next](/screenshots/service-workspace.webp)
 
 ::: tip Related
 See [Assignments](/assignments) for who's serving, and [Bulletin](/bulletin) for the printed
