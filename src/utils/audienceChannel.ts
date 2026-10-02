@@ -28,9 +28,13 @@
  * regardless of *how* the window went away: our own Close button, the browser's own tab close,
  * or the OS closing it) so the operator side stops presenting instead of being left thinking
  * it's still live with nothing actually on screen. See LivePresentationPort's `onAudienceClosed`.
+ *
+ * 'video-command' (operator-to-audience) and 'video-status' (audience-to-operator) carry the
+ * operator's transport controls for a live foreground video and the audience window's reports
+ * of where that video actually is. See LivePresentationPort's `sendVideoCommand`/`onVideoStatus`.
  */
 
-import type { LiveSlideContent } from '@/adapters/types'
+import type { LiveSlideContent, LiveVideoCommand, LiveVideoStatus } from '@/adapters/types'
 
 export const AUDIENCE_CHANNEL_NAME = 'worship-studio-audience'
 
@@ -41,3 +45,5 @@ export type AudienceMessage =
   | { type: 'next' }
   | { type: 'previous' }
   | { type: 'closed' }
+  | { type: 'video-command'; command: LiveVideoCommand }
+  | { type: 'video-status'; status: LiveVideoStatus }

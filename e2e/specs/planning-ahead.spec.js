@@ -1,3 +1,16 @@
+// Two months out from whenever this runs, mid-month. It used to be a fixed 2026-09-15, which
+// stopped being "ahead" once that date passed and failed the spec on 2026-10-02 with nothing
+// wrong in the app.
+const serviceDate = new Date()
+serviceDate.setDate(15)
+serviceDate.setMonth(serviceDate.getMonth() + 2)
+const serviceDateValue = [
+  serviceDate.getFullYear(),
+  String(serviceDate.getMonth() + 1).padStart(2, '0'),
+  '15',
+].join('-')
+const monthHeadingText = serviceDate.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+
 describe('Planning Ahead', () => {
   it('lists a future service under Plan Ahead and opens it from the card', async () => {
     // First launch on a fresh (or pre-existing-but-never-flagged) profile redirects to the
@@ -23,7 +36,7 @@ describe('Planning Ahead', () => {
       el.value = value
       el.dispatchEvent(new Event('input', { bubbles: true }))
       el.dispatchEvent(new Event('change', { bubbles: true }))
-    }, dateField, '2026-09-15')
+    }, dateField, serviceDateValue)
 
     const submit = await $('button*=Create & Open Service')
     await submit.waitForClickable({ timeout: 10000 })
@@ -46,7 +59,7 @@ describe('Planning Ahead', () => {
 
     // Plan Ahead groups every upcoming service by month directly (LandingView.vue's
     // futureServiceGroups) — no separate month sidebar/toolbar to navigate through first.
-    const monthHeading = await $('h3*=September 2026')
+    const monthHeading = await $(`h3*=${monthHeadingText}`)
     await monthHeading.waitForExist({ timeout: 10000 })
     await expect(monthHeading).toBeExisting()
 

@@ -5,7 +5,7 @@ import type { SlideSummary } from '../composables/usePoll'
 
 const props = defineProps<{
   slides: SlideSummary[]
-  /** `${content.itemLabel} — ${content.subLabel}` of whatever's currently live, to highlight
+  /** The operator label (LiveSlideContent.slideLabel) of whatever's currently live, to highlight
    *  the matching entry — the server doesn't expose a live index directly, but this format is
    *  the exact same one the labels themselves are built from (see describeSlide() in
    *  useLiveTransport.ts), so a plain string match is enough without adding another field. */

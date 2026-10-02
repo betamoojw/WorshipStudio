@@ -4,7 +4,7 @@ Running the service live happens in the same [Service Workspace](/services) you 
 there's no separate "presentation mode" to switch into and no export step. The order of worship
 you built *is* the running order.
 
-![Service Workspace — the order of service on the left with its edit button, a selected song's arrangement blocks in the middle under Change Song and Edit Arrangement, and the live Presentation preview panel on the right](/screenshots/service-workspace.webp)
+![Service Workspace — the order of service on the left with its edit button, a selected song's arrangement blocks in the middle under Change Song and Edit Arrangement, the live Presentation preview panel on the right, and the transport bar along the bottom with Previous, Background Only, Blank Screen and Next](/screenshots/service-workspace.webp)
 
 ## Before you start
 
@@ -31,10 +31,17 @@ Once you're live, the transport bar runs along the bottom of the workspace.
 | **Next** | <kbd>→</kbd> | Forward one slide |
 | **Blank Screen** | <kbd>B</kbd> | Hides everything. Press again to restore exactly where you were |
 | **Background Only** | <kbd>G</kbd> | Keeps the background, hides the words |
+| **Play / Pause** | <kbd>Space</kbd> | Starts or pauses the live video (only while one is live) |
 
 Previous and Next step through **every slide in the whole service** in order — verses, scripture
 pages, announcement slides, media — not just the item you're looking at. Crossing from the last
 slide of one item into the first of the next is automatic; you never have to "open" the next item.
+
+Each button says where it goes. Within the item on screen that's just the part — **Verse 3** —
+since the item's own name is already in the middle of the bar. When the next press would leave
+it for another item, the button says **Next item** (or **Previous item**) and names it.
+
+The bar's top edge shows whether you're presenting: **red while live**, a dim grey otherwise.
 
 **Blank Screen** and **Background Only** are overrides, not edits. Neither changes the service,
 and both remember where you were.
@@ -44,6 +51,30 @@ and both remember where you were.
 anything where a bright wall is a distraction. **Background Only** keeps the room's visual mood
 while clearing the words, which suits a musical interlude or the moments around communion.
 :::
+
+## Videos
+
+A video goes live **paused on its first frame** — nothing plays until you say so. While it's live,
+the middle of the transport bar becomes its controls: **Play/Pause**, **Back to start** (returns
+to the first frame, paused), the time played and total length, and — where the bar has room — a
+bar to jump to any point. The **Current** preview plays along, muted, so you can follow it without
+looking up.
+
+When a video finishes it holds on its last frame until you move on. **Blank Screen** and
+**Background Only** both take it off the screen and pick up where it was when you turn them off —
+playing again if it was playing.
+
+Moving on never waits for a video — Next and Previous always work. A video you leave part-way
+keeps its place while you're presenting, so an accidental Next is one Previous away from fixing:
+it comes back where it was, **paused**, ready for <kbd>Space</kbd>. A video that had finished
+starts over instead. Stopping the presentation forgets every place.
+
+A full-screen video or image has no background of its own, so **Background Only** shows the
+background of the nearest slide before it in the service instead — or the nearest one after it, if
+nothing earlier has one — so the screen keeps the room's look rather than going dark. Only when no
+slide in the service has a background does it go black.
+
+The audience screen never shows video controls; the congregation sees only the video.
 
 ## Reading ahead while you present
 
@@ -76,7 +107,8 @@ comes next. Moving from one part of the service to the next stays a decision you
 
 **From a phone or tablet.** Pair a device under [Settings → Remote Control](/settings) and it
 becomes a remote: **View Only** mirrors the presentation screen, and **Full Control** adds
-Previous/Next and the ability to jump to any slide. Useful for a worship leader on the platform
+Previous/Next, the ability to jump to any slide, and Play/Pause and Back to start while a video is
+live. Useful for a worship leader on the platform
 who needs to see what's up without a sightline to the operator.
 
 **From the audience window itself.** A phone or tablet with only one screen has nowhere to put an

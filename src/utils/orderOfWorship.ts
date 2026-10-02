@@ -346,8 +346,11 @@ export function toHtml(doc: OrderOfWorshipDoc): string {
       `<p style="margin:2px 0 0;color:#555;">${escapeHtml(doc.footer.text)}</p>` +
       `</div>`
     : ''
+  // No font-family anywhere: this is what the Copy button pastes into an email, a newsletter or
+  // the church's own document, and it should take on that app's font rather than force one. The
+  // Word/PDF exports are standalone documents and set their own.
   return (
-    `<div style="font-family: Georgia, serif;">` +
+    `<div>` +
     `<h2 style="text-align:center;margin-bottom:0;">${escapeHtml(doc.title)}</h2>` +
     `<p style="text-align:center;color:#555;margin-top:4px;">${escapeHtml(doc.dateLine)}</p>` +
     lineHtml +

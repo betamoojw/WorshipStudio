@@ -1,6 +1,11 @@
 import type { Service, ServiceItem } from '@/models/service'
 import type { Song } from '@/models/song'
-import type { PresentationThemeTarget, SlideLibraryItem, SlideScene } from '@/models/library'
+import type {
+  MediaItem,
+  PresentationThemeTarget,
+  SlideLibraryItem,
+  SlideScene,
+} from '@/models/library'
 import type { SongCollectionDefinition } from '@/models/settings'
 import type { ScripturePassage, ExternalAppProfile, ScriptureTextSegment } from '@/adapters/types'
 import {
@@ -43,6 +48,16 @@ export interface FlatSlide {
   /** Sermon passages only — which passage (by id) this page belongs to, so the editor can
    *  group a passage's own auto-split pages together. Absent for every other slide type. */
   passageId?: string
+  /** Full-text scripture pages only — this page's own chapter and verses ("8:31–35", or
+   *  "3:35–4:2" across a chapter) and the book they're in, for the operator's labels (see
+   *  utils/slideLabel.ts). The audience never sees these: their header is the whole passage
+   *  and their footer the translation. Absent when the reference can't be parsed. */
+  verseRange?: string
+  verseBook?: string
+  /** Full-text scripture pages of a passage split over several — this page's verses as they read
+   *  after the passage's own reference: "19–20" within one chapter, "3:35–4:2" when the passage
+   *  spans chapters. Absent when the passage fits on one page, where it would only repeat it. */
+  passagePart?: string
   /** Reference-only scripture slides only — the surrounding-books wayfinding visual (spec section 1). */
   wayfindingBooks?: WayfindingBook[]
   /** Reference-only scripture slides only — 0-1 fraction of the way through the whole Bible
@@ -189,10 +204,25 @@ function pushScriptureSlides(
   // text kept separate, unlike `verseUnits` above) without re-deriving verse boundaries from
   // the joined text itself, which a verse containing a bare number of its own ("forty days and
   // forty nights") would make ambiguous.
+  // Each verse's chapter, for the page ranges below — the verses carry only their own number, so
+  // it's counted from where the reference starts, stepping up each time the numbering goes back
+  // down (John 3:35, 36, then 4:1).
+  const parsed = parseReference(passage.reference) ?? parseReference(reference)
+  const chapters: number[] = []
+  if (parsed) {
+    let chapter = parsed.startChapter
+    passage.verses.forEach((verse, index) => {
+      if (index > 0 && verse.number <= passage.verses[index - 1]!.number) chapter += 1
+      chapters.push(chapter)
+    })
+  }
+  const passageSpansChapters = chapters.length > 0 && chapters[0] !== chapters.at(-1)
   let verseCursor = 0
   pages.forEach((pageUnits, i) => {
+    const firstIndex = verseCursor
     const pageVerses = passage.verses.slice(verseCursor, verseCursor + pageUnits.length)
     verseCursor += pageUnits.length
+    const lastIndex = verseCursor - 1
     const verseSegments: ScriptureTextSegment[] = pageVerses.flatMap((v, vi) => [
       { type: 'number', value: String(v.number) },
       { type: 'text', value: vi === pageVerses.length - 1 ? v.text : `${v.text} ` },
@@ -202,10 +232,32 @@ function pushScriptureSlides(
       itemIndex,
       itemId,
       itemLabel: passage.reference,
-      subLabel:
-        pages.length > 1
-          ? `${passage.translation} (${i + 1}/${pages.length})`
-          : passage.translation,
+      // Just the translation: which page of the passage this is ("2/3") is the operator's
+      // concern, and they get the page's own verses instead (verseRange).
+      subLabel: passage.translation,
+      verseRange: parsed
+        ? verseRangeLabel(
+            chapters[firstIndex]!,
+            passage.verses[firstIndex]!.number,
+            chapters[lastIndex]!,
+            passage.verses[lastIndex]!.number,
+          )
+        : undefined,
+      verseBook: parsed?.book,
+      passagePart:
+        parsed && pages.length > 1
+          ? passageSpansChapters
+            ? verseRangeLabel(
+                chapters[firstIndex]!,
+                passage.verses[firstIndex]!.number,
+                chapters[lastIndex]!,
+                passage.verses[lastIndex]!.number,
+              )
+            : verseNumbersLabel(
+                passage.verses[firstIndex]!.number,
+                passage.verses[lastIndex]!.number,
+              )
+          : undefined,
       text: pageUnits.join(' '),
       verseSegments,
       themeTarget,
@@ -214,6 +266,23 @@ function pushScriptureSlides(
     })
   })
   return pages.length
+}
+
+/** "19–20", or "19" for a single verse. */
+function verseNumbersLabel(startVerse: number, endVerse: number): string {
+  return startVerse === endVerse ? `${startVerse}` : `${startVerse}–${endVerse}`
+}
+
+/** "8:31–35", "8:31" for a single verse, "3:35–4:2" across a chapter. */
+function verseRangeLabel(
+  startChapter: number,
+  startVerse: number,
+  endChapter: number,
+  endVerse: number,
+): string {
+  if (startChapter !== endChapter) return `${startChapter}:${startVerse}–${endChapter}:${endVerse}`
+  if (startVerse === endVerse) return `${startChapter}:${startVerse}`
+  return `${startChapter}:${startVerse}–${endVerse}`
 }
 
 /**
@@ -251,8 +320,19 @@ export function flattenService(
   scriptureFontRange: FontSizeRange = DEFAULT_SCRIPTURE_FONT_RANGE,
   songFontRange: FontSizeRange = DEFAULT_SONG_FONT_RANGE,
   collectionDefinitions: SongCollectionDefinition[] = [],
+  mediaById: Map<string, MediaItem> = new Map(),
 ): FlatSlide[] {
   const flat: FlatSlide[] = []
+  // What a full-screen image or video is called live — on the transport bar, its Previous/Next
+  // and the phone's slide list. The item's own label when it has one (the same one the order
+  // list leads with, e.g. "Offering Video"), else the media's own title, rather than a bare
+  // "Video" that says nothing about which one. A trailing colon is a printed-heading habit
+  // ("Offertory:") that reads oddly as a name, so it's dropped.
+  function mediaItemLabel(item: ServiceItem & { mediaId: string }, fallback: string): string {
+    const label = item.bulletinLabel?.trim().replace(/:$/, '').trim()
+    const media = mediaById.get(item.mediaId)
+    return label || media?.title || media?.filename || fallback
+  }
   const serviceDateTime = serviceDateTimeIso(service)
 
   service.items.forEach((item, itemIndex) => {
@@ -462,7 +542,7 @@ export function flattenService(
         key: `${item.id}:0`,
         itemIndex,
         itemId: item.id,
-        itemLabel: 'Media',
+        itemLabel: mediaItemLabel(item, 'Image'),
         subLabel: '',
         text: '',
         mediaId: item.mediaId,
@@ -474,7 +554,7 @@ export function flattenService(
         key: `${item.id}:0`,
         itemIndex,
         itemId: item.id,
-        itemLabel: 'Video',
+        itemLabel: mediaItemLabel(item, 'Video'),
         subLabel: '',
         text: '',
         mediaId: item.mediaId,

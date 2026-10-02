@@ -3,7 +3,12 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { wrapLineAtPunctuation } from '@/utils/textAutoFit'
 import { OLD_TESTAMENT_FRACTION } from '@/utils/scriptureReference'
 import { presentationTextShadow } from '@/utils/presentationTextEffect'
-import type { LiveSlideContent, ScriptureTextSegment } from '@/adapters/types'
+import type {
+  LiveSlideContent,
+  LiveVideoCommand,
+  LiveVideoStatus,
+  ScriptureTextSegment,
+} from '@/adapters/types'
 import SlideSceneRenderer from '@/components/slides/SlideSceneRenderer.vue'
 
 /**
@@ -21,9 +26,14 @@ import SlideSceneRenderer from '@/components/slides/SlideSceneRenderer.vue'
  * gets, whether a song line wraps, etc.) match what the audience actually sees — only the
  * final visual size differs. Without this, an absolute px min/max font range (e.g. scripture's
  * 28-72px) would mean almost nothing at true thumbnail size: it'd just overflow a tiny box.
- * `videoAutoplay`/`videoControls` default to true for the real presentation window; the
- * preview thumbnails pass false for both so a video slide shows a static first frame instead
- * of three extra videos quietly playing at once. `videoMuted` defaults to false (the real
+ * A Media/Video item's own (foreground) video never plays by itself and never shows the
+ * browser's native controls — it goes live paused on its first frame, and the operator drives it
+ * from their own transport controls (ServiceWorkspaceView, or the phone remote) through
+ * `controlVideo` below, with this component reporting back via `video-status`. Native controls
+ * would sit on the audience screen, where the audience sees them and the operator can't reach
+ * them. `videoAutoplay` only covers a theme's looping background video: true for the real
+ * presentation window, false from the preview thumbnails so they show a static first frame
+ * instead of three extra videos quietly playing at once. `videoMuted` defaults to false (the real
  * presentation window plays media video audio through the room's own sound system) — the
  * Remote Control mirror is the one caller that passes true, to avoid feedback/echo from a
  * phone speaker near the platform (see RemoteMirror.vue's own tap-to-unmute affordance).
@@ -37,12 +47,15 @@ const props = withDefaults(
     content?: LiveSlideContent
     fixedSize?: { width: number; height: number }
     videoAutoplay?: boolean
-    videoControls?: boolean
     videoMuted?: boolean
     transition?: boolean
   }>(),
-  { videoAutoplay: true, videoControls: true, videoMuted: false, transition: false },
+  { videoAutoplay: true, videoMuted: false, transition: false },
 )
+
+const emit = defineEmits<{
+  'video-status': [status: LiveVideoStatus]
+}>()
 
 // Every computed/template expression below reads displayedContent, never props.content
 // directly — when `transition` is on, it deliberately lags behind the real prop by up to
@@ -571,6 +584,83 @@ const progressSegments = computed(() => {
     ntUnfilled: Math.max(0, 1 - Math.max(bibleProgress, OLD_TESTAMENT_FRACTION)),
   }
 })
+
+// The operator's transport controls for the foreground video (see LiveVideoCommand). Only ever
+// acts on the video currently displayed — during a `transition` fade the element is swapped a
+// beat after the prop changes, and a command arriving before the new video exists is dropped
+// rather than queued, since it was aimed at a video the operator can't have seen yet.
+const mediaVideoRef = ref<HTMLVideoElement>()
+// Set when play() is refused, cleared by the next successful play or a different video.
+let playBlocked = false
+watch(
+  () => displayedContent.value?.media?.url,
+  () => {
+    playBlocked = false
+  },
+)
+
+function reportVideoStatus() {
+  const video = mediaVideoRef.value
+  const mediaId = displayedContent.value?.media?.mediaId
+  if (!video || !mediaId) return
+  emit('video-status', {
+    mediaId,
+    playing: !video.paused && !video.ended,
+    currentTime: video.currentTime,
+    duration: Number.isFinite(video.duration) ? video.duration : 0,
+    ...(playBlocked ? { playBlocked: true } : {}),
+  })
+}
+
+async function playVideo(video: HTMLVideoElement) {
+  try {
+    await video.play()
+    playBlocked = false
+  } catch (e) {
+    // NotAllowedError: a browser audience window with no click inside it yet may not start
+    // audible playback. Reported so the operator is told why nothing happened; anything else
+    // (an AbortError from a pause() racing the play) needs no message.
+    if (e instanceof DOMException && e.name === 'NotAllowedError') playBlocked = true
+  }
+  reportVideoStatus()
+}
+
+function controlVideo(command: LiveVideoCommand) {
+  const video = mediaVideoRef.value
+  if (!video) return
+  switch (command.type) {
+    case 'play':
+      void playVideo(video)
+      break
+    case 'pause':
+      video.pause()
+      break
+    case 'restart':
+      video.pause()
+      video.currentTime = 0
+      break
+    case 'seek':
+      video.currentTime = Math.max(0, command.time)
+      break
+  }
+}
+
+// How far a follower (the phone mirror) may drift from the real output before it's re-seeked.
+// Loose on purpose: its position only arrives with each ~300ms poll, and seeking a video that's
+// merely a little behind reads as a stutter.
+const VIDEO_SYNC_TOLERANCE_S = 1.5
+
+/** For a mirror that follows the real output rather than being controlled directly. */
+function syncVideo(target: { playing: boolean; currentTime: number }) {
+  const video = mediaVideoRef.value
+  if (!video) return
+  if (Math.abs(video.currentTime - target.currentTime) > VIDEO_SYNC_TOLERANCE_S)
+    video.currentTime = target.currentTime
+  if (target.playing && video.paused && !video.ended) void playVideo(video)
+  else if (!target.playing && !video.paused) video.pause()
+}
+
+defineExpose({ controlVideo, syncVideo })
 </script>
 
 <template>
@@ -692,7 +782,7 @@ const progressSegments = computed(() => {
         </div>
       </div>
       <img
-        v-else-if="displayedContent?.media?.kind === 'image'"
+        v-else-if="displayedContent?.media?.kind === 'image' && !displayedContent.backgroundOnly"
         :key="displayedContent.media.url"
         :src="displayedContent.media.url"
         class="media-fill"
@@ -700,14 +790,19 @@ const progressSegments = computed(() => {
         alt=""
       />
       <video
-        v-else-if="displayedContent?.media?.kind === 'video'"
+        v-else-if="displayedContent?.media?.kind === 'video' && !displayedContent.backgroundOnly"
+        ref="mediaVideoRef"
         :key="displayedContent.media.url"
         :src="displayedContent.media.url"
         class="media-fill"
         :style="{ objectFit: displayedContent.media.fit }"
-        :autoplay="videoAutoplay"
-        :controls="videoControls"
         :muted="videoMuted"
+        @loadedmetadata="reportVideoStatus"
+        @play="reportVideoStatus"
+        @pause="reportVideoStatus"
+        @seeked="reportVideoStatus"
+        @timeupdate="reportVideoStatus"
+        @ended="reportVideoStatus"
       />
       <div
         v-else-if="displayedContent?.outlineTitle && !displayedContent.backgroundOnly"

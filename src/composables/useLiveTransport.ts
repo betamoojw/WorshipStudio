@@ -6,6 +6,7 @@ import { cssFontFamily, resolvePresentationFontFamily } from '@/utils/presentati
 import { presentationTextEffect } from '@/utils/presentationTextEffect'
 import { resolvePresentationTheme } from '@/utils/presentationTheme'
 import { logger } from '@/utils/logger'
+import { operatorSlideLabel, pageReference } from '@/utils/slideLabel'
 import type { FlatSlide } from '@/utils/flattenService'
 import type { Service } from '@/models/service'
 import type { MediaItem, SlideLibraryItem } from '@/models/library'
@@ -15,8 +16,20 @@ import type {
   ExternalAppProfile,
   LivePresentationTheme,
   LiveSlideContent,
+  LiveVideoCommand,
+  LiveVideoStatus,
   RemoteCommand,
 } from '@/adapters/types'
+
+/** What Previous or Next will move to, as the transport bar names it (see describeDestination). */
+export interface TransportDestination {
+  label: string
+  /** Shown before `label` only where the bar has room (its wide tier) — a scripture page's book,
+   *  so "Romans 8:31–35" there and "8:31–35" below it. */
+  prefix?: string
+  /** Moving there leaves the live item for another one. */
+  newItem: boolean
+}
 
 function errorMessage(e: unknown, fallback: string): string {
   if (typeof e === 'string') return e
@@ -87,6 +100,9 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
   const isBlankScreen = ref(false)
   const keyBeforeBlank = ref<string>()
   const backgroundOnly = ref(false)
+  /** Where each video was when it last left the audience output, by media id, for this run of
+   *  presenting — see the liveVideoMediaId watch. */
+  const videoPlaces = new Map<string, { currentTime: number; resumePlaying: boolean }>()
 
   /** Always re-derived from the current `flatSlides` — see the module doc comment above for
    *  why this is a computed rather than a stored index. Same numeric convention as before:
@@ -104,7 +120,7 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
 
   function describeSlide(index: number): string {
     const slide = flatSlides.value[index]
-    if (slide) return `${slide.itemLabel} — ${slide.subLabel}`
+    if (slide) return operatorSlideLabel(slide)
     return flatSlides.value.length === 0 ? 'Service is empty' : 'End of service'
   }
   const nextIndex = computed(() =>
@@ -117,15 +133,37 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
   const nextDisabled = computed(
     () => flatSlides.value.length === 0 || flatIndex.value >= flatSlides.value.length - 1,
   )
-  const nextPreviewLabel = computed(() =>
-    nextDisabled.value ? 'End of service' : describeSlide(nextIndex.value),
+  // Within the live item, only the part that differs ("Verse 3") — the item's own name is
+  // already the live label in the middle of the bar, and repeating it is what made these cut off.
+  // Crossing into another item names that item instead and says so ("Next item"), since that
+  // press leaves the song or passage on screen.
+  function describeDestination(index: number, disabled: boolean, edge: string) {
+    const target = disabled ? undefined : flatSlides.value[index]
+    if (!target) return { label: edge, newItem: false }
+    const live = liveSlide.value
+    if (target.itemIndex !== live?.itemIndex) return { label: target.itemLabel, newItem: true }
+    // A scripture page: its own chapter and verses, the book only where there's room — unless
+    // it's a different passage within the same sermon, where "3:16" alone wouldn't say which.
+    const reference = pageReference(target)
+    if (reference) {
+      return target.itemLabel === live.itemLabel
+        ? { label: target.verseRange!, prefix: target.verseBook, newItem: false }
+        : { label: reference, newItem: false }
+    }
+    return { label: target.subLabel || target.itemLabel, newItem: false }
+  }
+  const nextDestination = computed<TransportDestination>(() =>
+    describeDestination(nextIndex.value, nextDisabled.value, 'End of service'),
   )
-  const prevPreviewLabel = computed(() =>
-    previousDisabled.value ? 'Beginning of service' : describeSlide(prevIndex.value),
+  const previousDestination = computed<TransportDestination>(() =>
+    describeDestination(prevIndex.value, previousDisabled.value, 'Beginning of service'),
   )
 
   function goLive(index: number) {
     isBlankScreen.value = false
+    // Moving live makes any return to a video a deliberate one, so it comes back paused — even
+    // one Blank Screen or Background Only had taken down mid-play.
+    for (const place of videoPlaces.values()) place.resumePlaying = false
     const slide = flatSlides.value[index]
     liveSlideKey.value = slide?.key
     // The order list follows the live position. Every way of moving live lands here — Prev/Next,
@@ -256,10 +294,32 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
       displaySize: presentationSize.value,
       isBlankScreen: isBlankScreen.value,
       backgroundOnly: backgroundOnly.value,
+      video:
+        presenting && liveVideo.value
+          ? {
+              playing: liveVideo.value.playing,
+              currentTime: liveVideo.value.currentTime,
+              duration: liveVideo.value.duration,
+            }
+          : undefined,
     })
   }
 
-  async function togglePresenting() {
+  // Starting takes seconds (measuring displays, opening and placing the window) and isPresenting
+  // only flips at the end, so a second toggle arriving meanwhile — a double tap on the phone,
+  // whose button re-enables as soon as its request is sent — would see "not presenting" and start
+  // a second time, the two attempts tripping over each other's window. One change at a time; a
+  // toggle that arrives mid-change is dropped, not queued, since it was aimed at a state that no
+  // longer holds.
+  let presentingChange: Promise<void> | undefined
+  function togglePresenting(): Promise<void> {
+    if (!presentingChange)
+      presentingChange = changePresenting().finally(() => {
+        presentingChange = undefined
+      })
+    return presentingChange
+  }
+  async function changePresenting() {
     if (!isPresenting.value) {
       await loadPresentationSize()
       if (readiness.value.blockers.length) {
@@ -274,6 +334,8 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     } else {
       await getAdapter().live.stopPresenting()
       isPresenting.value = false
+      // Places only last one run of presenting; the next run of the service starts fresh.
+      videoPlaces.clear()
       logger.info('presentation', 'Stopped presenting')
       pushRemoteLiveState(undefined, false, false)
     }
@@ -349,6 +411,7 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     return {
       itemLabel: slide.itemLabel,
       subLabel: slide.subLabel,
+      slideLabel: operatorSlideLabel(slide),
       text: slide.text,
       verseSegments: slide.verseSegments,
       presentationTheme: buildPresentationTheme(slide),
@@ -373,8 +436,36 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
   }
   const liveContentPayload = computed<LiveSlideContent | undefined>(() => {
     const content = buildLiveContent(liveSlide.value)
-    return content ? { ...content, backgroundOnly: backgroundOnly.value } : undefined
+    if (!content) return undefined
+    if (backgroundOnly.value && content.media) return mediaBackgroundStandIn(content)
+    return { ...content, backgroundOnly: backgroundOnly.value }
   })
+  // Background Only on a full-screen video/image. The media is the whole picture — there's no
+  // background layer behind it to keep — so hiding it would just go dark, which is Blank Screen
+  // again. What an operator wants here is "take the video down but don't go dark": the nearest
+  // slide in service order that has a background of its own (a theme, or an advanced slide's own
+  // background), looking back first so the screen returns to the look the room just had, then
+  // forward. Black only when nothing in the service has a background. By service order rather
+  // than what was last on screen, so it's predictable and the same however the operator got here.
+  function mediaBackgroundStandIn(content: LiveSlideContent): LiveSlideContent {
+    const slides = flatSlides.value
+    const index = flatIndex.value
+    const nearestFirst = [
+      ...slides.slice(0, Math.max(index, 0)).reverse(),
+      ...slides.slice(index + 1),
+    ]
+    for (const slide of nearestFirst) {
+      const neighbor = buildLiveContent(slide)
+      if (neighbor && !neighbor.media && (neighbor.presentationTheme || neighbor.scene))
+        return { ...neighbor, backgroundOnly: true }
+    }
+    return {
+      itemLabel: content.itemLabel,
+      subLabel: content.subLabel,
+      text: '',
+      backgroundOnly: true,
+    }
+  }
   // A fade now plays across every slide change on the audience-facing output (see
   // SlideContentRenderer.vue's `transition` prop / notes/slide-transitions-plan.md). A
   // background image/video that hasn't finished loading by the time its slide goes live would
@@ -427,6 +518,65 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
       pushRemoteLiveState(content, true, !!liveSlide.value?.externalApp)
     }
   })
+
+  // Operator transport controls for a live video (Media/Video items — never a theme's looping
+  // background). The audience output only ever starts one paused on its first frame (see
+  // SlideContentRenderer.vue); everything from there is an explicit command from here or the
+  // phone remote, and the audience output reports back where the video actually is.
+  const liveVideoMediaId = computed(() => {
+    const media = liveContentPayload.value?.media
+    if (!isPresenting.value || liveSlide.value?.externalApp || media?.kind !== 'video')
+      return undefined
+    return media.mediaId
+  })
+  const liveVideoStatus = ref<LiveVideoStatus>()
+  /** The live video's state, or undefined when no video is live. Before the audience output's
+   *  first report it's the state every video goes live in: paused at the start. */
+  const liveVideo = computed<LiveVideoStatus | undefined>(() => {
+    const mediaId = liveVideoMediaId.value
+    if (!mediaId) return undefined
+    const status = liveVideoStatus.value
+    if (status?.mediaId === mediaId) return status
+    return { mediaId, playing: false, currentTime: 0, duration: 0 }
+  })
+  // A video leaving the audience output — for any reason: Next/Previous, a jump, Blank Screen,
+  // Background Only — comes back as a fresh element at the start, so its place is remembered
+  // here and restored when it's live again (see the onVideoStatus subscription below).
+  //
+  // How it comes back depends on how it left. Blank Screen and Background Only are brief
+  // interruptions of the same slide, so a video they took down mid-play picks up playing. Any
+  // other return is a deliberate move that could be seconds or twenty minutes later, and a video
+  // starting mid-sentence on its own is exactly what shouldn't happen — so it comes back paused,
+  // one Space from carrying on. A video that had finished isn't remembered: its last frame is no
+  // use to come back to, so it starts over.
+  watch(liveVideoMediaId, (_, leftMediaId) => {
+    const status = liveVideoStatus.value
+    liveVideoStatus.value = undefined
+    // Stopping presenting clears every place (see changePresenting) — nothing to save.
+    if (!leftMediaId || !isPresenting.value) return
+    // Still waiting to restore it (it left again before loading far enough to seek): keep the
+    // place it has rather than overwrite it with the fresh element's zero.
+    if (videoPlaces.has(leftMediaId)) return
+    if (status?.mediaId !== leftMediaId || status.currentTime <= 0) return
+    const finished = status.duration > 0 && status.currentTime >= status.duration - 0.5
+    if (finished) return
+    videoPlaces.set(leftMediaId, {
+      currentTime: status.currentTime,
+      resumePlaying: status.playing && (isBlankScreen.value || backgroundOnly.value),
+    })
+  })
+  // Mirrors play/pause and position to the phone as they change, not only on slide changes.
+  watch(liveVideoStatus, () => {
+    if (isPresenting.value && liveVideo.value)
+      pushRemoteLiveState(liveContentPayload.value, true, false)
+  })
+  function sendVideoCommand(command: LiveVideoCommand) {
+    if (!liveVideoMediaId.value) return
+    void getAdapter().live.sendVideoCommand(command)
+  }
+  function toggleVideoPlayback() {
+    sendVideoCommand({ type: liveVideo.value?.playing ? 'pause' : 'play' })
+  }
 
   // Previous/current/next preview thumbnails (right-hand column) — relative to the live
   // position, i.e. exactly what Previous/Next in the footer would move to/from, not whatever's
@@ -574,13 +724,7 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
   const currentSlideLabel = computed(() => {
     if (isBlankScreen.value) return 'Blank Screen'
     if (!liveSlide.value) return 'No Slide Selected'
-    return `${liveSlide.value.itemLabel} — ${liveSlide.value.subLabel}`
-  })
-  const slidePositionLabel = computed(() => {
-    if (flatSlides.value.length === 0) return 'No Slides'
-    if (isBlankScreen.value) return 'Screen Blank'
-    if (flatIndex.value < 0) return `${flatSlides.value.length} Slides Ready`
-    return `Slide ${flatIndex.value + 1} of ${flatSlides.value.length}`
+    return operatorSlideLabel(liveSlide.value)
   })
   const liveContextSnippet = computed(() => {
     const firstLine = liveSlide.value?.text.split('\n')[0]
@@ -631,16 +775,45 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
         event.preventDefault()
         toggleBackgroundOnly()
         break
+      case ' ':
+        // Only while a video is live — otherwise Space keeps doing whatever it normally would.
+        if (!liveVideo.value) break
+        event.preventDefault()
+        spaceTookVideo = true
+        if (!event.repeat) toggleVideoPlayback()
+        break
     }
+  }
+  // A focused button activates on Space's keyup, not keydown, so preventing the keydown above
+  // isn't enough to stop the button just clicked (Next, say) from also firing.
+  let spaceTookVideo = false
+  function onKeyup(event: KeyboardEvent) {
+    if (event.key !== ' ' || !spaceTookVideo) return
+    spaceTookVideo = false
+    event.preventDefault()
   }
 
   let unlistenRemoteCommand: (() => void) | undefined
   let unlistenAudienceNavigate: (() => void) | undefined
   let unlistenAudienceClosed: (() => void) | undefined
+  let unlistenVideoStatus: (() => void) | undefined
+  // Every subscription below is made after an await, so this view can unmount before one
+  // resolves — onUnmounted has then already run with nothing to remove, and the listener
+  // outlives it for good. Confirmed live in dev: a hot reload mid-mount left a second
+  // remote-command listener behind, so every phone button ran twice (two Starts racing for one
+  // window). Unsubscribe straight away instead if that happened.
+  let unmounted = false
+  function unlessUnmounted(unlisten: (() => void) | undefined) {
+    if (!unmounted) return unlisten
+    unlisten?.()
+    return undefined
+  }
   onMounted(async () => {
     window.addEventListener('keydown', onKeydown)
+    window.addEventListener('keyup', onKeyup)
     window.addEventListener('focus', loadPresentationSize)
     await loadPresentationSize()
+    if (unmounted) return
     // This composable only exists while ServiceWorkspaceView has a service open — a remote
     // device shouldn't see Start Presenting/Prev/Next/the slide picker before that's true, so
     // mount/unmount is exactly the right signal (see SharedLiveState::service_open's own doc
@@ -649,27 +822,47 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     // Remote Control (spec section 4): a paired phone's button press arrives here the same
     // way the presentation window receives slide changes — as a Tauri event, not a direct
     // function call, since the HTTP server lives entirely on the Rust side.
-    unlistenRemoteCommand = await getAdapter().remote?.onCommand((command: RemoteCommand) => {
-      if (command.action === 'next') next()
-      else if (command.action === 'previous') previous()
-      else if (command.action === 'goto' && command.index !== undefined) goLive(command.index)
-      else if (command.action === 'toggle-presenting') togglePresenting()
-      else if (command.action === 'toggle-blank-screen') toggleBlankScreen()
-      else if (command.action === 'toggle-background-only') toggleBackgroundOnly()
-      else if (command.action === 'external-app-relaunch') void retryExternalApp()
-      else if (command.action === 'external-app-close') void closeExternalApp()
-      else if (command.action === 'external-app-command' && command.commandId) {
-        const profileId = liveSlide.value?.externalApp?.profileId
-        if (profileId) void sendManualCommand(profileId, command.commandId)
-      }
-    })
+    unlistenRemoteCommand = unlessUnmounted(
+      await getAdapter().remote?.onCommand((command: RemoteCommand) => {
+        if (command.action === 'next') next()
+        else if (command.action === 'previous') previous()
+        else if (command.action === 'goto' && command.index !== undefined) goLive(command.index)
+        else if (command.action === 'toggle-presenting') togglePresenting()
+        else if (command.action === 'toggle-blank-screen') toggleBlankScreen()
+        else if (command.action === 'toggle-background-only') toggleBackgroundOnly()
+        else if (command.action === 'external-app-relaunch') void retryExternalApp()
+        else if (command.action === 'external-app-close') void closeExternalApp()
+        else if (command.action === 'external-app-command' && command.commandId) {
+          const profileId = liveSlide.value?.externalApp?.profileId
+          if (profileId) void sendManualCommand(profileId, command.commandId)
+        } else if (command.action === 'video-toggle-play') toggleVideoPlayback()
+        else if (command.action === 'video-restart') sendVideoCommand({ type: 'restart' })
+      }),
+    )
+    unlistenVideoStatus = unlessUnmounted(
+      await getAdapter().live.onVideoStatus((status) => {
+        liveVideoStatus.value = status
+        // Back on a video with a remembered place (see the liveVideoMediaId watch): once the
+        // fresh element has loaded enough to seek (a duration means its metadata is in), put it
+        // back where it was. Checked against what's live *now*, not just the report, since the
+        // old element can still report during its fade-out right after it left.
+        const place = videoPlaces.get(status.mediaId)
+        if (place && liveVideoMediaId.value === status.mediaId && status.duration > 0) {
+          videoPlaces.delete(status.mediaId)
+          sendVideoCommand({ type: 'seek', time: place.currentTime })
+          if (place.resumePlaying) sendVideoCommand({ type: 'play' })
+        }
+      }),
+    )
     // Presenting from a tablet with no separate operator screen to switch back to (spec:
     // tap zones on WebAudienceView.vue's own audience window) — same shape as the Remote Control
     // subscription just above, just a different transport (BroadcastChannel, not a Tauri event).
-    unlistenAudienceNavigate = await getAdapter().live.onNavigateRequest?.((direction) => {
-      if (direction === 'next') next()
-      else previous()
-    })
+    unlistenAudienceNavigate = unlessUnmounted(
+      await getAdapter().live.onNavigateRequest?.((direction) => {
+        if (direction === 'next') next()
+        else previous()
+      }),
+    )
     // The audience window closing on its own (its own Close button, the browser's tab close, the
     // OS closing it) — without this, the operator side would keep believing it's still
     // presenting, with Stop Presenting sitting there as if there were still something to stop.
@@ -677,12 +870,16 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     // *operator's own* Stop Presenting already set isPresenting false and closed the window
     // itself — that close also triggers the audience window's own 'closed' broadcast moments
     // later (see WebAudienceView.vue's pagehide listener), just after it's already a no-op here.
-    unlistenAudienceClosed = await getAdapter().live.onAudienceClosed?.(() => {
-      if (isPresenting.value) togglePresenting()
-    })
+    unlistenAudienceClosed = unlessUnmounted(
+      await getAdapter().live.onAudienceClosed?.(() => {
+        if (isPresenting.value) togglePresenting()
+      }),
+    )
   })
   onUnmounted(() => {
+    unmounted = true
     window.removeEventListener('keydown', onKeydown)
+    window.removeEventListener('keyup', onKeyup)
     window.removeEventListener('focus', loadPresentationSize)
     // Safety net: the router guard (router/index.ts) is what normally prevents leaving while
     // presenting, but if this view ever unmounts some other way, don't leave the app
@@ -697,6 +894,7 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     unlistenRemoteCommand?.()
     unlistenAudienceNavigate?.()
     unlistenAudienceClosed?.()
+    unlistenVideoStatus?.()
     previewResizeObserver?.disconnect()
     if (autoAdvanceTimer) clearTimeout(autoAdvanceTimer)
   })
@@ -708,8 +906,8 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     backgroundOnly,
     previousDisabled,
     nextDisabled,
-    prevPreviewLabel,
-    nextPreviewLabel,
+    previousDestination,
+    nextDestination,
     goLive,
     next,
     previous,
@@ -718,9 +916,11 @@ export function useLiveTransport(options: UseLiveTransportOptions) {
     togglePresenting,
     startPresentation,
     liveContentPayload,
+    liveVideo,
+    sendVideoCommand,
+    toggleVideoPlayback,
     previewSlots,
     currentSlideLabel,
-    slidePositionLabel,
     liveContextSnippet,
     audienceDisplayAvailable,
     presentationDisplayDialogOpen,

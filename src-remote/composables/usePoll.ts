@@ -28,6 +28,9 @@ export interface RemoteState {
   displaySize?: { width: number; height: number }
   isBlankScreen: boolean
   backgroundOnly: boolean
+  /** Present only while a video is the live foreground content — the real audience output's
+   *  play state and position (seconds), for the mirror to follow. */
+  video?: { playing: boolean; currentTime: number; duration: number }
   /** True once a service is open on the operator side, regardless of `isPresenting` — see
    *  remote_server.rs's `service_open` doc comment. Full Control has nothing useful to show
    *  (no Start Presenting, no Prev/Next, no slide picker) until this is true. */

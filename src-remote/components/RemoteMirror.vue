@@ -21,6 +21,9 @@ const props = defineProps<{
   /** Full Control only — View Only is look-but-don't-touch, so it gets the auto-refreshing
    *  screenshot like anyone else but not a tappable action button on top of it. */
   hasControls?: boolean
+  /** The real audience output's live video state (see usePoll.ts) — the mirror's own copy of
+   *  the video follows it rather than playing independently. */
+  video?: { playing: boolean; currentTime: number; duration: number }
 }>()
 
 // `LiveMediaRef.url` is a `convertFileSrc` URL, only meaningful inside the operator's own
@@ -88,6 +91,18 @@ onUnmounted(() => {
 })
 
 const isVideo = computed(() => props.content?.media?.kind === 'video')
+
+// Videos go live paused and play only when the operator (or a Full Control phone) starts them,
+// so this copy just follows along — re-synced on every poll, which also catches it up when its
+// element was only just created for a new slide.
+const rendererRef = ref<InstanceType<typeof SlideContentRenderer>>()
+watch(
+  () => props.video,
+  (video) => {
+    if (video) rendererRef.value?.syncVideo(video)
+  },
+)
+const { pending: videoActionPending, sendAction: sendVideoAction } = useRemoteAction()
 // Muted by default (avoids feedback/echo from a phone speaker near the platform — the room's
 // own sound system already carries video audio) — reset on every new video slide rather than a
 // sticky cross-slide preference, so muting one video doesn't silently carry into the next.
@@ -192,9 +207,9 @@ const offsetY = computed(() => Math.max((wrapHeight.value - scaledHeight.value) 
     </div>
     <SlideContentRenderer
       v-else-if="remappedContent"
+      ref="rendererRef"
       :content="remappedContent"
       :fixed-size="virtualSize"
-      :video-controls="false"
       :video-muted="muted"
       :style="{
         position: 'absolute',
@@ -206,6 +221,25 @@ const offsetY = computed(() => Math.max((wrapHeight.value - scaledHeight.value) 
     />
     <div v-else-if="isBlankScreen" class="mirror-empty">Screen is blanked</div>
     <div v-else class="mirror-empty">Not presenting</div>
+    <div v-if="hasControls && video && isVideo && !externalAppActive" class="video-actions">
+      <button
+        type="button"
+        class="action-btn"
+        :disabled="videoActionPending"
+        @click="sendVideoAction('video-toggle-play')"
+      >
+        {{ video.playing ? '⏸ Pause' : '▶ Play' }}
+      </button>
+      <button
+        type="button"
+        class="action-btn"
+        :disabled="videoActionPending"
+        aria-label="Back to start"
+        @click="sendVideoAction('video-restart')"
+      >
+        ⏮ Start
+      </button>
+    </div>
     <button
       v-if="isVideo && !externalAppActive"
       type="button"
@@ -275,6 +309,13 @@ const offsetY = computed(() => Math.max((wrapHeight.value - scaledHeight.value) 
 .action-btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+.video-actions {
+  position: absolute;
+  left: var(--ws-space-2);
+  bottom: var(--ws-space-2);
+  display: flex;
+  gap: var(--ws-space-2);
 }
 .mute-toggle {
   position: absolute;

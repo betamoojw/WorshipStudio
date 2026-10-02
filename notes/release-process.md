@@ -137,17 +137,32 @@ into `dev`**, or the fix is lost at the next release.
    can absorb. If it ever moves into CI, pull requests into `main` are the place — the same
    moment, enforced.
 
-2. On `dev`, bump the version in `package.json` and `src-tauri/Cargo.toml` (keep both in sync).
+2. **Recapture the help-site screenshots if the UI changed** since the last release — any screen
+   the help pages show (`docs/public/screenshots/`), the transport bar and presentation views
+   especially:
+   ```sh
+   cd e2e
+   npm run capture:screenshots   # reuses the binary step 1 just built
+   ```
+   It drives the app through the documented screens (`e2e/docs-screenshots/capture.js`) and
+   converts them to WebP. Look at every image before committing — this is kept out of the test
+   suite precisely because each one needs a human eye (see notes/help-system-plan.md). Don't
+   skip it for a release that changed the UI: the help site is republished with the release
+   (step 7) and goes live without review, so a stale screenshot ships the moment the tag does.
+   As of the September 2026 transport bar, video and scripture work, `service-workspace.webp`
+   and `scripture-full.webp` were already known stale.
+
+3. On `dev`, bump the version in `package.json` and `src-tauri/Cargo.toml` (keep both in sync).
    `src-tauri/tauri.conf.json`'s `version` field points at `../package.json` rather than
    carrying its own literal, so it follows automatically — confirmed by checking the generated
    Windows resource file's FileVersion/ProductVersion after a build. The bump belongs to the
    release, not to the work: doing it here rather than earlier keeps `dev` from carrying a
    version it has not shipped.
-3. Commit that change and push `dev`.
-4. Open a pull request from `dev` into `main` and merge it once CI is green. Merge commit, not
+4. Commit that change and push `dev`.
+5. Open a pull request from `dev` into `main` and merge it once CI is green. Merge commit, not
    squash — the individual commits explain their own reasoning and are what the release notes
    are drawn from.
-5. Tag `main` and push the tag:
+6. Tag `main` and push the tag:
    ```sh
    git checkout main && git pull
    git tag v0.2.0
@@ -159,7 +174,7 @@ into `dev`**, or the fix is lost at the next release.
    one before the merge lands fails the run rather than publishing unreleased code. If that
    happens: merge, then `git push origin :refs/tags/v0.2.0` and push the tag again, since
    re-pushing an unchanged tag does not re-trigger anything.
-6. `release.yml` builds a signed Windows installer and republishes the GitHub Pages site (help
+7. `release.yml` builds a signed Windows installer and republishes the GitHub Pages site (help
    site + demo, see "Static browser demo" below). macOS was dropped from the release matrix
    (no one currently runs live presentation from a Mac, and the web build already covers
    Mac-based prep work) — the Tauri config, signing rationale, and install instructions below

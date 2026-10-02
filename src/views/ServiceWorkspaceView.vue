@@ -41,6 +41,8 @@ import { flattenService, type FlatSlide } from '@/utils/flattenService'
 import { colorForBlockLabel, colorForItemType } from '@/utils/contentColors'
 import { findSermonItem, sermonMainReference, sermonPreacherId } from '@/utils/sermonInfo'
 import { formatServiceTime } from '@/utils/serviceTime'
+import { formatVideoTime } from '@/utils/videoTime'
+import { slidePartLabel } from '@/utils/slideLabel'
 import { returnPath, routeWithReturnTo } from '@/utils/returnNavigation'
 import { errorMessage as asyncErrorMessage } from '@/composables/useAsyncStoreState'
 import { useDocumentHistory } from '@/composables/useDocumentHistory'
@@ -641,6 +643,7 @@ const flatSlides = computed<FlatSlide[]>(() =>
         scriptureFontRange.value,
         songFontRange.value,
         songCollectionsStore.collections,
+        mediaById.value,
       )
     : [],
 )
@@ -1090,6 +1093,12 @@ const selectedMediaUrl = computed(() => {
   const mediaId = item?.type === 'media' || item?.type === 'video' ? item.mediaId : undefined
   return mediaId ? mediaUrlById.get(mediaId) : undefined
 })
+// Read off the still frame's own metadata (see the video item's template) — reset per video so
+// the previous one's length never shows while the next is loading.
+const selectedVideoDuration = ref(Number.NaN)
+watch(selectedMediaUrl, () => {
+  selectedVideoDuration.value = Number.NaN
+})
 const selectedMediaError = computed(() => {
   const item = selectedItem.value
   const mediaId = item?.type === 'media' || item?.type === 'video' ? item.mediaId : undefined
@@ -1237,17 +1246,18 @@ const {
   backgroundOnly,
   previousDisabled,
   nextDisabled,
-  prevPreviewLabel,
-  nextPreviewLabel,
+  previousDestination,
+  nextDestination,
   goLive,
   next,
   previous,
   toggleBlankScreen,
   toggleBackgroundOnly,
   togglePresenting,
+  liveVideo,
+  sendVideoCommand,
   previewSlots,
   currentSlideLabel,
-  slidePositionLabel,
   liveContextSnippet,
   audienceDisplayAvailable,
   presentationDisplayDialogOpen,
@@ -1282,6 +1292,16 @@ const {
   retryExternalApp: () => retryExternalApp(),
   closeExternalApp: () => closeExternalApp(),
   sendManualCommand: (profileId, commandId) => sendManualCommand(profileId, commandId),
+})
+
+// The Current preview thumbnail plays along with the live video (muted, following the audience
+// output's own reports), so the operator can see what's on screen without looking up at it.
+let currentPreviewRenderer: InstanceType<typeof SlideContentRenderer> | undefined
+function setCurrentPreviewRenderer(el: unknown) {
+  currentPreviewRenderer = (el as InstanceType<typeof SlideContentRenderer> | null) ?? undefined
+}
+watch(liveVideo, (status) => {
+  if (status) currentPreviewRenderer?.syncVideo(status)
 })
 
 // Previous/Next changes the transport's live slide directly, bypassing the sermon-flow row
@@ -1923,7 +1943,7 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                       v-if="selectedItemFlatSlides.length > 1"
                       class="text-caption text-medium-emphasis"
                     >
-                      {{ slide.subLabel }}
+                      {{ slidePartLabel(slide) }}
                     </span>
                     <span
                       v-if="flatIndex === slideFlatIndex(selectedItem.id, index)"
@@ -2035,15 +2055,53 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                 class="media-preview"
                 alt=""
               />
+              <!-- A local preview player, for checking a video without presenting it. Its clicks
+                   stop here: this row is the click target that sends the item live, so pressing
+                   Play used to also send the video to the audience screen (arriving paused)
+                   while this copy played on its own. Once the video really is on the audience
+                   screen, the player gives way to a still frame, so the only Play in sight is
+                   the real one in the transport bar. -->
               <video
-                v-else-if="selectedMediaUrl"
+                v-else-if="selectedMediaUrl && !(isPresenting && itemHasLive(selectedItemIndex))"
+                :key="selectedMediaUrl"
                 :src="selectedMediaUrl"
                 class="media-preview"
                 muted
                 controls
+                preload="metadata"
+                @click.stop
+                @loadedmetadata="
+                  selectedVideoDuration = ($event.target as HTMLVideoElement).duration
+                "
               />
+              <div v-else-if="selectedMediaUrl" class="video-still">
+                <video
+                  :key="selectedMediaUrl"
+                  :src="selectedMediaUrl"
+                  class="media-preview"
+                  muted
+                  preload="metadata"
+                  @loadedmetadata="
+                    selectedVideoDuration = ($event.target as HTMLVideoElement).duration
+                  "
+                />
+                <span v-if="Number.isFinite(selectedVideoDuration)" class="video-still-duration">
+                  {{ formatVideoTime(selectedVideoDuration) }}
+                </span>
+              </div>
               <div v-else class="text-body-2 text-medium-emphasis">Loading…</div>
             </div>
+            <p
+              v-if="selectedItem.type === 'video' && selectedMediaUrl"
+              class="text-caption text-medium-emphasis mt-2"
+              style="max-width: 460px"
+            >
+              {{
+                isPresenting && itemHasLive(selectedItemIndex)
+                  ? 'On the audience screen. Play it from the video controls in the bar below.'
+                  : 'Preview — plays only here, never on the audience screen.'
+              }}
+            </p>
           </template>
 
           <template v-else-if="selectedItem.type === 'sermon'">
@@ -2234,7 +2292,7 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                         <span
                           v-if="passageFlatSlides(mainSermonPassage.id).length > 1"
                           class="text-caption text-medium-emphasis"
-                          >{{ slide.subLabel }}</span
+                          >{{ slidePartLabel(slide) }}</span
                         ><span
                           v-if="flatIndex === flatIndexForKey(slide.key)"
                           class="slide-row-live-badge"
@@ -2455,7 +2513,9 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                     >
                       <div>
                         <div class="slide-row-title-row">
-                          <span class="text-caption text-medium-emphasis">{{ slide.subLabel }}</span
+                          <span class="text-caption text-medium-emphasis">{{
+                            slidePartLabel(slide)
+                          }}</span
                           ><span
                             v-if="flatIndex === flatIndexForKey(slide.key)"
                             class="slide-row-live-badge"
@@ -2689,7 +2749,7 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                           v-if="passageFlatSlides(mainSermonPassage.id).length > 1"
                           class="text-caption text-medium-emphasis"
                         >
-                          {{ slide.subLabel }}
+                          {{ slidePartLabel(slide) }}
                         </span>
                         <span
                           v-if="flatIndex === flatIndexForKey(slide.key)"
@@ -2918,7 +2978,7 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                                 v-if="passageFlatSlides(passage.id).length > 1"
                                 class="text-caption text-medium-emphasis"
                               >
-                                {{ slide.subLabel }}
+                                {{ slidePartLabel(slide) }}
                               </span>
                               <span
                                 v-if="flatIndex === flatIndexForKey(slide.key)"
@@ -3293,11 +3353,15 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
                 aspectRatio: `${PREVIEW_VIRTUAL_SIZE.width} / ${PREVIEW_VIRTUAL_SIZE.height}`,
               }"
             >
+              <!-- Muted: the audience output already plays the audio, and this machine's
+                   speakers are often the same ones. The Current thumbnail follows the live
+                   video (see the liveVideo watch in script); the others stay a still frame. -->
               <SlideContentRenderer
+                :ref="preview.live ? setCurrentPreviewRenderer : undefined"
                 :content="preview.content"
                 :fixed-size="PREVIEW_VIRTUAL_SIZE"
                 :video-autoplay="false"
-                :video-controls="false"
+                video-muted
                 :style="{ transform: `scale(${previewScale})`, transformOrigin: 'top left' }"
               />
             </div>
@@ -3324,19 +3388,21 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
       :compact="isShortViewport"
       :previous-disabled="previousDisabled"
       :next-disabled="nextDisabled"
-      :prev-preview-label="prevPreviewLabel"
-      :next-preview-label="nextPreviewLabel"
+      :previous="previousDestination"
+      :next="nextDestination"
       :is-presenting="isPresenting"
       :current-slide-label="currentSlideLabel"
       :live-context-snippet="liveContextSnippet"
-      :slide-position-label="slidePositionLabel"
       :background-only="backgroundOnly"
       :background-only-disabled="!liveSlide"
       :is-blank-screen="isBlankScreen"
+      :live-video="liveVideo"
+      :live-video-title="liveSlide?.itemLabel ?? ''"
       @previous="previous"
       @next="next"
       @toggle-background-only="toggleBackgroundOnly"
       @toggle-blank-screen="toggleBlankScreen"
+      @video-command="sendVideoCommand"
     />
 
     <ReadinessDialog
@@ -3873,6 +3939,23 @@ function updateRolePerson(roleId: string, personId: string | undefined) {
   max-width: 100%;
   max-height: 220px;
   border-radius: 4px;
+}
+.video-still {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+.video-still-duration {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
 }
 .media-item-controls {
   display: flex;
