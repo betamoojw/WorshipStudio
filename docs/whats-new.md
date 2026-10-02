@@ -10,6 +10,36 @@ Every release on the [Releases page](https://github.com/jeyeager65/WorshipStudio
 full list of changes, down to the individual commit.
 :::
 
+## 0.9.1
+
+**New**
+
+- **Video is yours to drive.** A video goes on screen paused on its first frame instead of
+  starting by itself. Play, pause, jump back to the start or to any point from the bar along the
+  bottom, or press <kbd>Space</kbd>. A phone set up as a remote gets Play/Pause too.
+- **A video keeps its place.** Move on by accident and come back, and it picks up where it was —
+  paused, ready to carry on. Blank Screen and Background Only pause it and resume it afterwards.
+
+**Improved**
+
+- **A clearer bar for running the service.** Next is the obvious button, and both Previous and
+  Next say exactly where they go — just "Verse 3" within a song, and "Next item" with its name
+  when the next press moves on to something else. Whether you're live shows as a red line along
+  the top of the bar. It also lays itself out properly on narrow windows and tablets.
+- **Scripture shows its verses to you, not a page count to the room.** The congregation sees the
+  passage and the translation; you see which verses are on each slide, such as "Romans 8:28-39
+  (31–35)", with what comes next.
+- **Videos and images go by their names** on the bar and the phone remote, instead of all being
+  called "Video".
+- **Background Only on a video** shows the background of a nearby slide instead of going dark.
+- **A copied bulletin takes on the font** of the email or document you paste it into.
+
+**Fixed**
+
+- With monitors at different scaling settings, the presentation could open on the wrong screen.
+  Identify now labels each screen correctly, and the display list shows real resolutions.
+- Starting a presentation from the phone remote could fail and open the display picker.
+
 ## 0.9.0
 
 The first public release, so this is an introduction rather than a list of changes.
